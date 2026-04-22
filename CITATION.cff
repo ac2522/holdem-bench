@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this benchmark, please cite."
+title: "HoldEmBench: A No-Limit Texas Hold'em Benchmark for LLMs with Table-Talk"
+version: 0.1.0
+date-released: "2026-04-22"
+authors:
+  - family-names: "Carter"
+    given-names: "Alex"
+license: Apache-2.0
+repository-code: "https://github.com/alex-carter/holdem-bench"
+keywords:
+  - llm
+  - benchmark
+  - poker
+  - texas-holdem
+  - deception
+  - persuasion

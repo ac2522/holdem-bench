@@ -2,6 +2,7 @@
 
 Reference: Plackett (1975). Standard iterative algorithm; Hunter (2004) MM variant.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

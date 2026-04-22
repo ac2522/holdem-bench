@@ -1,4 +1,5 @@
 """Chip EV and mbb/100 computation from an event log."""
+
 from __future__ import annotations
 
 from pathlib import Path

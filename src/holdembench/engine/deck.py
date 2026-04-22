@@ -1,4 +1,5 @@
 """Deterministic deck shuffling for reproducible deal packs."""
+
 from __future__ import annotations
 
 import numpy as np

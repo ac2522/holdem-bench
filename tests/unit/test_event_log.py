@@ -1,4 +1,5 @@
 """Tests for append-only JSONL event log."""
+
 from __future__ import annotations
 
 import hashlib
@@ -32,10 +33,16 @@ def test_eventlog_appends_jsonl_lines(tmp_path: Path) -> None:
     path = tmp_path / "events.jsonl"
     with EventLog(path) as log:
         log.emit(_ts())
-        log.emit(SessionStart(
-            session_id=1, hand_cap=10, small_blind=10, big_blind=20,
-            ante=0, deal_pack_seed=1,
-        ))
+        log.emit(
+            SessionStart(
+                session_id=1,
+                hand_cap=10,
+                small_blind=10,
+                big_blind=20,
+                ante=0,
+                deal_pack_seed=1,
+            )
+        )
 
     lines = path.read_text().splitlines()
     assert len(lines) == NUM_LINES_TWO_EVENTS
@@ -59,12 +66,14 @@ def test_eventlog_is_append_only(tmp_path: Path) -> None:
     with EventLog(path) as log:
         log.emit(_ts())
     with EventLog(path) as log:
-        log.emit(HandEnd(
-            hand_id="s1h001",
-            stack_deltas={"Seat1": 0},
-            elapsed_s=0.1,
-            total_cost_usd=0.0,
-        ))
+        log.emit(
+            HandEnd(
+                hand_id="s1h001",
+                stack_deltas={"Seat1": 0},
+                elapsed_s=0.1,
+                total_cost_usd=0.0,
+            )
+        )
     events = list(EventLog.replay(path))
     assert len(events) == NUM_EVENTS_TWO
 

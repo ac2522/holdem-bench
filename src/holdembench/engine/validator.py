@@ -1,4 +1,5 @@
 """TDA action-protocol validator — enforces rules pokerkit doesn't cover."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -55,6 +56,4 @@ class TDAValidator:
                 raise ValidationError("raise requires positive amount")
             min_raise = self._table.min_raise_to()
             if amount < min_raise:
-                raise ValidationError(
-                    f"min raise is {min_raise}, got {amount}"
-                )
+                raise ValidationError(f"min raise is {min_raise}, got {amount}")

@@ -1,4 +1,5 @@
 """Bootstrap BCa confidence intervals via scipy.stats.bootstrap."""
+
 from __future__ import annotations
 
 import math

@@ -1,4 +1,5 @@
 """Tests for Agent protocol + DecisionContext."""
+
 from __future__ import annotations
 
 import pytest

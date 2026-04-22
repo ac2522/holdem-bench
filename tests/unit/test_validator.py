@@ -1,4 +1,5 @@
 """Tests for the TDA action-protocol validator."""
+
 from __future__ import annotations
 
 import pytest

@@ -1,4 +1,5 @@
 """Hypothesis: TDAValidator never accepts a malformed action."""
+
 from __future__ import annotations
 
 import pytest
@@ -14,7 +15,10 @@ _MIN_RAISE_AMOUNT = 40  # 2 * BB (big blind is 20)
 
 def _fresh_table() -> Table:
     cfg = TableConfig(
-        seat_count=6, small_blind=10, big_blind=20, ante=0,
+        seat_count=6,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
         starting_stacks=tuple(1000 for _ in range(6)),
     )
     return Table(cfg)

@@ -1,4 +1,5 @@
 """CLI entry point — `holdembench run --config CONFIG`."""
+
 from __future__ import annotations
 
 import asyncio
@@ -38,9 +39,7 @@ def cli() -> None:
     default=True,
     help="Use deterministic time (default) or real wall-clock time",
 )
-def run(
-    config_path: str, results_dir: str, seed: int | None, deterministic_time: bool
-) -> None:
+def run(config_path: str, results_dir: str, seed: int | None, deterministic_time: bool) -> None:
     """Run a tournament from a YAML config file."""
     raw = yaml.safe_load(Path(config_path).read_text())
     cfg = TournamentConfig(

@@ -1,4 +1,5 @@
 """Golden regression tests — scripted hands with known expected outcomes."""
+
 from __future__ import annotations
 
 import json

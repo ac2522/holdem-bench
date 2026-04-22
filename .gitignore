@@ -19,7 +19,7 @@ htmlcov/
 
 # uv
 .venv/
-uv.lock.lock
+
 
 # OS
 .DS_Store

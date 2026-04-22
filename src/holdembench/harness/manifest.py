@@ -1,4 +1,5 @@
 """Manifest.json writer + verifier — binds tournament metadata to event-log SHA."""
+
 from __future__ import annotations
 
 import json

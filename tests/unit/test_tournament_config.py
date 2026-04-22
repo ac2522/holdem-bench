@@ -1,4 +1,5 @@
 """Tests for TournamentConfig.__post_init__ validation (Fix 6)."""
+
 from __future__ import annotations
 
 from pathlib import Path

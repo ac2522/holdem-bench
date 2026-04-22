@@ -2,6 +2,7 @@
 
 Exists to answer 'does any chat at all, even scripted, outperform silence?'
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -35,6 +36,4 @@ class CannedTalkAgent:
     async def decide(self, ctx: DecisionContext) -> RawDecision:
         base = await self._gto.decide(ctx)
         message = _CANNED_MESSAGES[self._rng.integers(0, len(_CANNED_MESSAGES))]
-        return RawDecision(
-            kind=base.kind, action=base.action, amount=base.amount, message=message
-        )
+        return RawDecision(kind=base.kind, action=base.action, amount=base.amount, message=message)

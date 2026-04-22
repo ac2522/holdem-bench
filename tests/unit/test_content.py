@@ -1,4 +1,5 @@
 """Tests for chat content analysis & prompt-injection rejection."""
+
 from __future__ import annotations
 
 import pytest

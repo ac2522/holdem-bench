@@ -1,4 +1,5 @@
 """Tests for the pokerkit Table wrapper."""
+
 from __future__ import annotations
 
 import pytest

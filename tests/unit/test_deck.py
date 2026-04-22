@@ -1,4 +1,5 @@
 """Tests for deterministic deck shuffling."""
+
 from __future__ import annotations
 
 from holdembench.engine.deck import STANDARD_DECK, shuffled_deck

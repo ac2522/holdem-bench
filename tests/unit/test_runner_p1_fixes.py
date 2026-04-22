@@ -1,4 +1,5 @@
 """Tests for P1 runner fixes: action_request events, chat wiring, mark_folded, retry policy."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -139,9 +140,7 @@ async def test_runner_calls_chat_spend_valid_message(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_runner_content_rejection_strips_message(tmp_path: Path) -> None:
     """Agent sends an HTML injection message — should be stripped and ValidatorRejection emitted."""
-    cfg = _base_cfg(
-        tmp_path, seats={"Seat1": "stub:injection", "Seat2": "stub:injection"}
-    )
+    cfg = _base_cfg(tmp_path, seats={"Seat1": "stub:injection", "Seat2": "stub:injection"})
     agents = {"stub:injection": _InjectionChatAgent()}
     out = await run_tournament(cfg, agents)
     events = list(EventLog.replay(out.log_path))

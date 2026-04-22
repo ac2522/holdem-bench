@@ -1,4 +1,5 @@
 """Tests for the chat protocol — budget accounting and probe mechanics."""
+
 from __future__ import annotations
 
 import pytest

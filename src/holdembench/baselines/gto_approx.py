@@ -1,6 +1,7 @@
 """Coarse GTO-approximation agent — shoves on push/fold chart preflop,
 check-or-call postflop. Phase 0 baseline only; refinement in Phase 3.
 """
+
 from __future__ import annotations
 
 from holdembench.agents.base import DecisionContext, Pricing
@@ -46,9 +47,7 @@ class GTOApproxAgent:
             stack_bb = max(1, ctx.stacks[ctx.seat] // self._big_blind)
             in_range = _hand_key(ctx.hole) in _shove_range_for(stack_bb)
             if in_range and "raise" in ctx.legal:
-                return RawDecision(
-                    kind="action", action="raise", amount=ctx.stacks[ctx.seat]
-                )
+                return RawDecision(kind="action", action="raise", amount=ctx.stacks[ctx.seat])
             if "check" in ctx.legal:
                 return RawDecision(kind="action", action="check")
             return RawDecision(kind="action", action="fold")

@@ -1,4 +1,5 @@
 """Tests for multi-way Plackett-Luce rating."""
+
 from __future__ import annotations
 
 import pytest

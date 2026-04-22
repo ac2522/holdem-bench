@@ -1,4 +1,5 @@
 """Tests for GTOApproxAgent."""
+
 from __future__ import annotations
 
 from holdembench.agents.base import DecisionContext

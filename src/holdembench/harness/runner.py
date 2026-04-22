@@ -25,6 +25,7 @@ Empirically verified: after a fold with SB=10/BB=20 starting 1000 each,
 relative to pre-post starting stacks; absolute from the 1000 each starting point
 they are 1010 and 990).
 """
+
 from __future__ import annotations
 
 import hashlib

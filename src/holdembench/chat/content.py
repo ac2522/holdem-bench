@@ -5,18 +5,17 @@ logged to analysis/card_claims.jsonl for calibration metrics post-hoc.
 Identity-leakage strings are also allowed but counted.
 Prompt-injection / tool-call / HTML attempts ARE rejected as malformed.
 """
+
 from __future__ import annotations
 
 import re
 
-_CARD_RANK_WORDS = (
-    r"ace|king|queen|jack|ten|nine|eight|seven|six|five|four|three|two|deuce"
-)
+_CARD_RANK_WORDS = r"ace|king|queen|jack|ten|nine|eight|seven|six|five|four|three|two|deuce"
 _CARD_SUIT_WORDS = r"hearts?|diamonds?|clubs?|spades?"
 
 _CARD_CLAIM_PATTERNS = (
-    re.compile(r"[AKQJT2-9][cdhs]"),                                        # "Ah", "Ks", "AhKs"
-    re.compile(r"\b[AKQJT2-9]\s?[♠♥♦♣]", re.UNICODE),                       # "A♠"
+    re.compile(r"[AKQJT2-9][cdhs]"),  # "Ah", "Ks", "AhKs"
+    re.compile(r"\b[AKQJT2-9]\s?[♠♥♦♣]", re.UNICODE),  # "A♠"
     re.compile(rf"\b({_CARD_RANK_WORDS})\s+of\s+({_CARD_SUIT_WORDS})\b", re.IGNORECASE),
     re.compile(r"\brocket[s-]?rocket\b|\bpocket\s+(kings|aces|queens|jacks)\b", re.IGNORECASE),
     re.compile(r"\brockets\b", re.IGNORECASE),
@@ -33,9 +32,9 @@ _IDENTITY_PATTERNS = (
 )
 
 _INJECTION_PATTERNS = (
-    re.compile(r"<\s*[a-z][a-z0-9-]*\b[^>]*>", re.IGNORECASE),   # any HTML-like tag
+    re.compile(r"<\s*[a-z][a-z0-9-]*\b[^>]*>", re.IGNORECASE),  # any HTML-like tag
     re.compile(r"\bfunction_call\b|\btool_call\b"),
-    re.compile(r"```"),                                          # code fences
+    re.compile(r"```"),  # code fences
 )
 
 

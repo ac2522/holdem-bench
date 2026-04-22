@@ -1,4 +1,5 @@
 """Tests for event schema pydantic models."""
+
 from __future__ import annotations
 
 import json

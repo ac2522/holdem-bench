@@ -1,4 +1,5 @@
 """Tests for chip EV + mbb/100 computation from event log."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,25 +19,46 @@ def _minimal_log(tmp: Path) -> Path:
     with EventLog(p) as log:
         log.emit(
             TournamentStart(
-                tournament_id="t", schema_version="1.0",
-                holdembench_version="0.1", pokerkit_version="0.7",
-                git_sha="x", seat_assignments={"Seat1": "a", "Seat2": "b"},
-                master_seed=0, anonymization_salt="s", canary_uuid="u",
+                tournament_id="t",
+                schema_version="1.0",
+                holdembench_version="0.1",
+                pokerkit_version="0.7",
+                git_sha="x",
+                seat_assignments={"Seat1": "a", "Seat2": "b"},
+                master_seed=0,
+                anonymization_salt="s",
+                canary_uuid="u",
             )
         )
         log.emit(
-            SessionStart(session_id=1, hand_cap=2, small_blind=10, big_blind=20,
-                         ante=0, deal_pack_seed=1)
+            SessionStart(
+                session_id=1, hand_cap=2, small_blind=10, big_blind=20, ante=0, deal_pack_seed=1
+            )
         )
-        log.emit(HandEnd(hand_id="s1h001", stack_deltas={"Seat1": 100, "Seat2": -100},
-                         elapsed_s=0.1, total_cost_usd=0.0))
-        log.emit(HandEnd(hand_id="s1h002", stack_deltas={"Seat1": -50, "Seat2": 50},
-                         elapsed_s=0.1, total_cost_usd=0.0))
+        log.emit(
+            HandEnd(
+                hand_id="s1h001",
+                stack_deltas={"Seat1": 100, "Seat2": -100},
+                elapsed_s=0.1,
+                total_cost_usd=0.0,
+            )
+        )
+        log.emit(
+            HandEnd(
+                hand_id="s1h002",
+                stack_deltas={"Seat1": -50, "Seat2": 50},
+                elapsed_s=0.1,
+                total_cost_usd=0.0,
+            )
+        )
         log.emit(
             TournamentEnd(
-                tournament_id="t", final_chip_totals={"Seat1": 1050, "Seat2": 950},
-                winner_seat="Seat1", winner_model="a",
-                total_cost_usd=0.0, wall_clock_s=1.0,
+                tournament_id="t",
+                final_chip_totals={"Seat1": 1050, "Seat2": 950},
+                winner_seat="Seat1",
+                winner_model="a",
+                total_cost_usd=0.0,
+                wall_clock_s=1.0,
             )
         )
     return p

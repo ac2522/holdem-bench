@@ -1,4 +1,5 @@
 """Canonical event schema (pydantic v2 models)."""
+
 from __future__ import annotations
 
 from typing import Annotated, Literal

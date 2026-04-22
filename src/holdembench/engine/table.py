@@ -13,6 +13,7 @@ Pokerkit API notes (v0.7.3):
 - ``Automation.HOLE_DEALING`` — auto-deals hole cards so actors are available
   immediately after construction without a separate deal step.
 """
+
 from __future__ import annotations
 
 from typing import cast

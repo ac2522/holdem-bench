@@ -1,4 +1,5 @@
 """Integration: stub-only tournament runs end-to-end."""
+
 from __future__ import annotations
 
 from pathlib import Path

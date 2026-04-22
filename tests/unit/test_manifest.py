@@ -1,4 +1,5 @@
 """Tests for manifest.json writer + integrity check."""
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,12 @@ def _write_simple_log(path: Path) -> None:
         )
         log.emit(
             SessionStart(
-                session_id=1, hand_cap=10, small_blind=10, big_blind=20,
-                ante=0, deal_pack_seed=1,
+                session_id=1,
+                hand_cap=10,
+                small_blind=10,
+                big_blind=20,
+                ante=0,
+                deal_pack_seed=1,
             )
         )
 

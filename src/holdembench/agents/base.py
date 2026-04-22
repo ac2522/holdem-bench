@@ -1,4 +1,5 @@
 """Agent protocol + supporting types for the adapter layer."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

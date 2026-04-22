@@ -201,7 +201,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23,<1" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5,<6" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5,<1" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15,<1" },
     { name = "scipy", specifier = ">=1.13,<2" },
     { name = "tiktoken", specifier = ">=0.7,<1" },
 ]

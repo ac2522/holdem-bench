@@ -2,6 +2,7 @@
 
 Enforcement layer that sits between agents and the event log.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -50,9 +51,7 @@ class ChatProtocol:
         self.start_orbit()
 
     def start_orbit(self) -> None:
-        self._state = {
-            s: _SeatState(budget_remaining=self.budget_per_orbit) for s in self.seats
-        }
+        self._state = {s: _SeatState(budget_remaining=self.budget_per_orbit) for s in self.seats}
 
     def start_hand(self, in_hand: set[str]) -> None:
         for _seat, st in self._state.items():
@@ -92,9 +91,7 @@ class ChatProtocol:
                 )
 
         if kind == "probe_reply" and tokens < MIN_PROBE_REPLY_TOKENS:
-            raise ChatRuleViolation(
-                f"probe_reply requires min {MIN_PROBE_REPLY_TOKENS} tokens"
-            )
+            raise ChatRuleViolation(f"probe_reply requires min {MIN_PROBE_REPLY_TOKENS} tokens")
 
         if tokens > st.budget_remaining:
             raise ChatRuleViolation(

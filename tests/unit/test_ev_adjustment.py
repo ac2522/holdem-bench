@@ -1,4 +1,5 @@
 """Tests for all-in Monte Carlo equity computation."""
+
 from __future__ import annotations
 
 import pytest

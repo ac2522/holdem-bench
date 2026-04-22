@@ -1,4 +1,5 @@
 """All-in Monte Carlo equity using pokerkit StandardHighHand for correctness."""
+
 from __future__ import annotations
 
 import numpy as np

@@ -1,4 +1,5 @@
 """Stub-only end-to-end integration — full tournament via CLI."""
+
 from __future__ import annotations
 
 import hashlib
@@ -21,9 +22,10 @@ def test_cli_end_to_end_produces_valid_artifacts(tmp_path: Path) -> None:
     cfg = Path(__file__).parents[2] / "evals" / "stub-phase0-smoke.yaml"
     results = tmp_path / "results"
     r = subprocess.run(
-        ["uv", "run", "holdembench", "run", "--config", str(cfg),
-         "--results-dir", str(results)],
-        capture_output=True, text=True, timeout=120,
+        ["uv", "run", "holdembench", "run", "--config", str(cfg), "--results-dir", str(results)],
+        capture_output=True,
+        text=True,
+        timeout=120,
         check=False,
     )
     assert r.returncode == 0, f"CLI failed: {r.stderr}"
@@ -50,9 +52,18 @@ def test_byte_identical_on_reseed(tmp_path: Path) -> None:
     cfg = Path(__file__).parents[2] / "evals" / "stub-phase0-smoke.yaml"
     for name in ("a", "b"):
         subprocess.run(
-            ["uv", "run", "holdembench", "run", "--config", str(cfg),
-             "--results-dir", str(tmp_path / name)],
-            check=True, timeout=120,
+            [
+                "uv",
+                "run",
+                "holdembench",
+                "run",
+                "--config",
+                str(cfg),
+                "--results-dir",
+                str(tmp_path / name),
+            ],
+            check=True,
+            timeout=120,
         )
     a_log = (tmp_path / "a" / "stub-phase0-smoke" / "events.jsonl").read_bytes()
     b_log = (tmp_path / "b" / "stub-phase0-smoke" / "events.jsonl").read_bytes()

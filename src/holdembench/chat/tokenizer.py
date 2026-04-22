@@ -3,6 +3,7 @@
 One ruler for all models regardless of their native tokenizer; this is the
 HELM-style fairness approach. Documented in docs/prompting.md.
 """
+
 from __future__ import annotations
 
 import functools

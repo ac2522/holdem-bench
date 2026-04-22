@@ -1,4 +1,5 @@
 """Append-only JSONL event log writer + reader."""
+
 from __future__ import annotations
 
 import hashlib

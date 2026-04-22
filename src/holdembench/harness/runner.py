@@ -28,9 +28,11 @@ they are 1010 and 990).
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,13 +40,15 @@ import pokerkit
 
 import holdembench
 from holdembench.agents.base import Agent, DecisionContext
-from holdembench.chat.protocol import ChatProtocol
+from holdembench.chat.content import ContentRejection, validate_content
+from holdembench.chat.protocol import ChatProtocol, ChatRuleViolation
 from holdembench.engine.config import TableConfig
 from holdembench.engine.deck import shuffled_deck
 from holdembench.engine.table import Table
 from holdembench.engine.validator import RawDecision, TDAValidator, ValidationError
 from holdembench.events.log import EventLog
 from holdembench.events.schema import (
+    ActionRequest,
     ActionResponse,
     AutoFold,
     HandEnd,
@@ -56,6 +60,8 @@ from holdembench.events.schema import (
     ValidatorRejection,
 )
 from holdembench.harness.manifest import write_manifest
+
+_SEAT_KEY_RE = re.compile(r"^Seat\d+$")
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,29 @@ class TournamentConfig:
     # When True (default), zero out elapsed_s / wall_clock_s and use a fixed
     # git_sha so byte-identical logs are produced for identical seeds.
     deterministic_time: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.seats:
+            raise ValueError("TournamentConfig.seats must be non-empty")
+        for key in self.seats:
+            if not _SEAT_KEY_RE.match(key):
+                raise ValueError(
+                    f"TournamentConfig.seats key {key!r} does not match 'SeatN' pattern"
+                )
+        if self.small_blind <= 0:
+            raise ValueError(f"small_blind must be > 0, got {self.small_blind}")
+        if self.big_blind < self.small_blind:
+            raise ValueError(
+                f"big_blind ({self.big_blind}) must be >= small_blind ({self.small_blind})"
+            )
+        if self.ante < 0:
+            raise ValueError(f"ante must be >= 0, got {self.ante}")
+        if self.starting_stack <= 0:
+            raise ValueError(f"starting_stack must be > 0, got {self.starting_stack}")
+        if self.hand_cap <= 0:
+            raise ValueError(f"hand_cap must be > 0, got {self.hand_cap}")
+        if self.session_count <= 0:
+            raise ValueError(f"session_count must be > 0, got {self.session_count}")
 
 
 @dataclass(frozen=True)
@@ -174,6 +203,108 @@ def _raw_to_dict(raw: RawDecision) -> dict[str, object]:
     }
 
 
+async def _validate_with_retry(
+    *,
+    log: EventLog,
+    agent: Agent,
+    validator: TDAValidator,
+    table: Table,
+    chat: ChatProtocol,
+    idx: int,
+    seat_name: str,
+    ctx: DecisionContext,
+    raw: RawDecision,
+) -> RawDecision | None:
+    """Validate *raw* against the TDA rules.  Returns the validated decision or None on auto-fold.
+
+    On first failure emits ValidatorRejection(retry_allowed=True) and re-calls the agent once.
+    On second failure emits ValidatorRejection(retry_allowed=False) + AutoFold and applies
+    an emergency fold (falling back to check_or_call when fold is not legal).
+
+    Returns ``None`` when the action was auto-folded (caller should ``continue``).
+    """
+    try:
+        validator.check(idx, raw)
+        return raw
+    except ValidationError as exc:
+        log.emit(
+            ValidatorRejection(
+                seat=seat_name,
+                reason=str(exc),
+                original_response=_raw_to_dict(raw),
+                retry_allowed=True,
+            )
+        )
+
+    # Retry
+    raw2 = await agent.decide(ctx)
+    try:
+        validator.check(idx, raw2)
+        return raw2
+    except ValidationError as exc2:
+        log.emit(
+            ValidatorRejection(
+                seat=seat_name,
+                reason=str(exc2),
+                original_response=_raw_to_dict(raw2),
+                retry_allowed=False,
+            )
+        )
+        log.emit(AutoFold(seat=seat_name, reason="invalid_after_retry"))
+        try:
+            table.apply_fold(idx)
+        except ValueError:
+            # Cannot fold (e.g. BB checking back with no need to fold);
+            # fall back to check_or_call so the hand can progress.
+            table.apply_check_or_call(idx)
+        chat.mark_folded(seat_name)
+        return None
+
+
+def _filter_chat_message(
+    *,
+    log: EventLog,
+    seat_name: str,
+    raw: RawDecision,
+    chat: ChatProtocol,
+) -> str | None:
+    """Validate content + spend chat budget.  Returns the message to attach (possibly None)."""
+    message = raw.message
+    if message is None:
+        return None
+
+    try:
+        validate_content(message)
+    except ContentRejection:
+        log.emit(
+            ValidatorRejection(
+                seat=seat_name,
+                reason="chat_content",
+                original_response=_raw_to_dict(raw),
+                retry_allowed=False,
+            )
+        )
+        return None
+
+    try:
+        chat.spend(seat_name, message, kind=raw.kind)  # type: ignore[arg-type]
+    except ChatRuleViolation:
+        log.emit(
+            ValidatorRejection(
+                seat=seat_name,
+                reason="chat_budget",
+                original_response=_raw_to_dict(raw),
+                retry_allowed=False,
+            )
+        )
+        return None
+
+    return message
+
+
+_ACTION_TIMEOUT_S = 60.0
+
+
 # ---------------------------------------------------------------------------
 # Hand-level helpers (extracted to keep run_tournament statement count low)
 # ---------------------------------------------------------------------------
@@ -227,33 +358,45 @@ async def _run_hand(
         if idx is None:
             break
         seat_name = seat_list[idx]
+        legal = _legal_actions(table)
+        log.emit(
+            ActionRequest(
+                hand_id=hand_id,
+                to_seat=seat_name,
+                street="preflop",  # Phase 0: placeholder — street tracking in Phase 1
+                legal=legal,  # type: ignore[arg-type]
+                timeout_s=_ACTION_TIMEOUT_S,
+                budget_remaining=chat.budget_remaining(seat_name),
+            )
+        )
         ctx = DecisionContext(
             seat=seat_name,
             hand_id=hand_id,
             street="preflop",  # Phase 0: placeholder — street tracking in Phase 1
-            legal=_legal_actions(table),  # type: ignore[arg-type]
+            legal=legal,  # type: ignore[arg-type]
             stacks=dict(running_stacks),
             board=(),
             hole=tuple(deck[idx * 2 : idx * 2 + 2]),
             budget_remaining=chat.budget_remaining(seat_name),
             is_probe_reply=False,
-            deadline_s=60.0,
+            deadline_s=_ACTION_TIMEOUT_S,
         )
         raw = await agents_by_seat[seat_name].decide(ctx)
-        try:
-            validator.check(idx, raw)
-        except ValidationError as exc:
-            log.emit(
-                ValidatorRejection(
-                    seat=seat_name,
-                    reason=str(exc),
-                    original_response=_raw_to_dict(raw),
-                    retry_allowed=False,
-                )
-            )
-            log.emit(AutoFold(seat=seat_name, reason="invalid_after_retry"))
-            table.apply_fold(idx)
+        validated = await _validate_with_retry(
+            log=log,
+            agent=agents_by_seat[seat_name],
+            validator=validator,
+            table=table,
+            chat=chat,
+            idx=idx,
+            seat_name=seat_name,
+            ctx=ctx,
+            raw=raw,
+        )
+        if validated is None:
             continue
+        raw = validated
+        final_message = _filter_chat_message(log=log, seat_name=seat_name, raw=raw, chat=chat)
         log.emit(
             ActionResponse(
                 hand_id=hand_id,
@@ -261,7 +404,7 @@ async def _run_hand(
                 kind=raw.kind,
                 action=raw.action,
                 amount=raw.amount,
-                message=raw.message,
+                message=final_message,
                 tokens=0,
                 latency_ms=0,
                 cost_usd=0.0,
@@ -270,6 +413,10 @@ async def _run_hand(
             )
         )
         _apply_raw_to_table(table, idx, raw)
+
+        # Mark folded seats so they cannot chat for the rest of this hand
+        if raw.action == "fold":
+            chat.mark_folded(seat_name)
 
     elapsed = 0.0 if cfg.deterministic_time else time.time() - hand_wall_start
     deltas = _compute_stack_deltas(table, seat_list, running_stacks)
@@ -334,7 +481,7 @@ async def _run_session(
 
 async def run_tournament(
     cfg: TournamentConfig,
-    agents: dict[str, Agent],
+    agents: Mapping[str, Agent],
 ) -> TournamentResult:
     """Run a full tournament and return the paths to the resulting log + manifest.
 

@@ -71,3 +71,56 @@ def test_validator_rejects_action_from_wrong_seat() -> None:
     wrong = (seat + 1) % 6
     with pytest.raises(ValidationError, match="not the current actor"):
         v.check(wrong, RawDecision(kind="action", action="fold"))
+
+
+def test_validator_uses_pokerkit_min_raise() -> None:
+    """min_raise_to() uses pokerkit's reported value (current_bet + last_raise_size)."""
+    cfg = TableConfig(
+        seat_count=2,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        starting_stacks=(1000, 1000),
+    )
+    t = Table(cfg)
+    v = TDAValidator(t)
+    seat = t.next_actor()
+    assert seat is not None
+
+    # First actor preflop (UTG in 2-seat = SB). BB=20, so min open is 40.
+    # Amount 30 is below min (40) — must reject.
+    with pytest.raises(ValidationError, match="min raise"):
+        v.check(seat, RawDecision(kind="action", action="raise", amount=30))
+
+    # Amount 40 equals min — must accept.
+    v.check(seat, RawDecision(kind="action", action="raise", amount=40))
+
+
+def test_validator_min_raise_after_previous_raise() -> None:
+    """After BB=20 and an open to 60, the next raise must be >= 100 (60 + 40)."""
+    cfg = TableConfig(
+        seat_count=3,
+        small_blind=10,
+        big_blind=20,
+        ante=0,
+        starting_stacks=(1000, 1000, 1000),
+    )
+    t = Table(cfg)
+    v = TDAValidator(t)
+
+    # First actor (UTG=seat2 in 3-handed) raises to 60 (raise size = 40 over BB=20)
+    seat = t.next_actor()
+    assert seat is not None
+    v.check(seat, RawDecision(kind="action", action="raise", amount=60))
+    t.apply_raise(seat, to=60)
+
+    # Next actor: min re-raise must be 60 + 40 = 100
+    seat2 = t.next_actor()
+    assert seat2 is not None
+
+    # Amount 80 is below the required 100 — must reject
+    with pytest.raises(ValidationError, match="min raise"):
+        v.check(seat2, RawDecision(kind="action", action="raise", amount=80))
+
+    # Amount 100 meets the minimum — must accept
+    v.check(seat2, RawDecision(kind="action", action="raise", amount=100))

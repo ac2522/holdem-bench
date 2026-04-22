@@ -1,0 +1,15 @@
+tournament_id: stub-phase0-smoke
+seats:
+  Seat1: stub:random
+  Seat2: stub:tight_passive
+  Seat3: stub:random
+  Seat4: stub:tight_passive
+  Seat5: stub:random
+  Seat6: stub:tight_passive
+small_blind: 10
+big_blind: 20
+ante: 0
+starting_stack: 1000
+hand_cap: 20
+session_count: 1
+master_seed: 42

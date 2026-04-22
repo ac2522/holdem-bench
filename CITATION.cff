@@ -7,7 +7,7 @@ authors:
   - family-names: "Carter"
     given-names: "Alex"
 license: Apache-2.0
-repository-code: "https://github.com/alex-carter/holdem-bench"
+repository-code: "https://github.com/ac2522/holdem-bench"
 keywords:
   - llm
   - benchmark

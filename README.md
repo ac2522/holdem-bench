@@ -1,8 +1,8 @@
 # HoldEmBench
 
-[![test](https://github.com/alex-carter/holdem-bench/actions/workflows/test.yml/badge.svg)](https://github.com/alex-carter/holdem-bench/actions/workflows/test.yml)
-[![lint](https://github.com/alex-carter/holdem-bench/actions/workflows/lint.yml/badge.svg)](https://github.com/alex-carter/holdem-bench/actions/workflows/lint.yml)
-[![types](https://github.com/alex-carter/holdem-bench/actions/workflows/types.yml/badge.svg)](https://github.com/alex-carter/holdem-bench/actions/workflows/types.yml)
+[![test](https://github.com/ac2522/holdem-bench/actions/workflows/test.yml/badge.svg)](https://github.com/ac2522/holdem-bench/actions/workflows/test.yml)
+[![lint](https://github.com/ac2522/holdem-bench/actions/workflows/lint.yml/badge.svg)](https://github.com/ac2522/holdem-bench/actions/workflows/lint.yml)
+[![types](https://github.com/ac2522/holdem-bench/actions/workflows/types.yml/badge.svg)](https://github.com/ac2522/holdem-bench/actions/workflows/types.yml)
 
 A No-Limit Texas Hold'em benchmark for large language models, with natural-language **table-talk**.
 
@@ -23,7 +23,7 @@ re-run under fixed seeds. No real-model tournaments yet — Phase 1.
 ## Quick start
 
 ```bash
-git clone https://github.com/alex-carter/holdem-bench && cd holdem-bench
+git clone https://github.com/ac2522/holdem-bench && cd holdem-bench
 uv sync
 uv run holdembench run --config evals/stub-phase0-smoke.yaml --seed 42
 ```

@@ -39,8 +39,8 @@ dev = [
 holdembench = "holdembench.cli:cli"
 
 [project.urls]
-Repository = "https://github.com/alex-carter/holdem-bench"
-Documentation = "https://github.com/alex-carter/holdem-bench/tree/main/docs"
+Repository = "https://github.com/ac2522/holdem-bench"
+Documentation = "https://github.com/ac2522/holdem-bench/tree/main/docs"
 
 [build-system]
 requires = ["hatchling>=1.25"]

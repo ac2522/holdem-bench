@@ -3,7 +3,7 @@
 ## Development setup
 
 ```bash
-git clone https://github.com/alex-carter/holdem-bench && cd holdem-bench
+git clone https://github.com/ac2522/holdem-bench && cd holdem-bench
 uv sync --all-extras
 uv run pre-commit install
 ```

@@ -3,7 +3,7 @@
 ## Re-running a published tournament
 
 ```bash
-git clone https://github.com/alex-carter/holdem-bench && cd holdem-bench
+git clone https://github.com/ac2522/holdem-bench && cd holdem-bench
 git checkout t-<tournament_id>
 uv sync --frozen
 docker build -t holdem-bench:<version> .

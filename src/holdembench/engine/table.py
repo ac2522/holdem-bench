@@ -88,6 +88,18 @@ class Table:
             raise ValueError(f"seat {seat} is not the current actor")
         self._state.check_or_call()
 
+    def min_raise_to(self) -> int:
+        """Return the minimum total amount for a legal raise on the current street.
+
+        Delegates to pokerkit's ``min_completion_betting_or_raising_to_amount``
+        which implements TDA Rule 40 correctly (current_bet + last_raise_size).
+        Returns ``big_blind`` as the floor when no raises have occurred yet.
+        """
+        amount = self._state.min_completion_betting_or_raising_to_amount
+        if amount is None:
+            return self._config.big_blind
+        return int(amount)
+
     def apply_raise(self, seat: int, to: int) -> None:
         if self._state.actor_index != seat:
             raise ValueError(f"seat {seat} is not the current actor")

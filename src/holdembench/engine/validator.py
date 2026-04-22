@@ -53,8 +53,7 @@ class TDAValidator:
             amount = decision.amount
             if amount is None or amount <= 0:
                 raise ValidationError("raise requires positive amount")
-            current_bet = self._table.current_bet()
-            min_raise = current_bet * 2 if current_bet > 0 else self._table.big_blind
+            min_raise = self._table.min_raise_to()
             if amount < min_raise:
                 raise ValidationError(
                     f"min raise is {min_raise}, got {amount}"

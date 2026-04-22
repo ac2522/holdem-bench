@@ -1,4 +1,5 @@
 """Canonical event schema + append-only log writer/reader."""
+from holdembench.events.log import EventLog
 from holdembench.events.schema import (
     ActionRequest,
     ActionResponse,
@@ -27,6 +28,7 @@ __all__ = [
     "CommunityDeal",
     "Deal",
     "Event",
+    "EventLog",
     "HandEnd",
     "HandStart",
     "ProbeResponseRequest",

@@ -7,6 +7,27 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "1.0"
 
+__all__ = [
+    "_Base",
+    "ActionRequest",
+    "ActionResponse",
+    "AutoFold",
+    "BudgetCircuitBreak",
+    "CommunityDeal",
+    "Deal",
+    "Event",
+    "HandEnd",
+    "HandStart",
+    "ProbeResponseRequest",
+    "SessionEnd",
+    "SessionStart",
+    "Showdown",
+    "TournamentEnd",
+    "TournamentStart",
+    "ValidatorRejection",
+    "parse_event",
+]
+
 
 class _Base(BaseModel):
     """Common pydantic config for all events."""

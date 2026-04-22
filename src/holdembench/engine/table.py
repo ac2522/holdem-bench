@@ -58,6 +58,10 @@ class Table:
     def seat_count(self) -> int:
         return self._config.seat_count
 
+    @property
+    def big_blind(self) -> int:
+        return self._config.big_blind
+
     def next_actor(self) -> int | None:
         """Return the seat index (0-based) of the next actor, or None if hand over."""
         return self._state.actor_index

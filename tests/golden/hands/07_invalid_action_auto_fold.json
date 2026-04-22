@@ -1,0 +1,14 @@
+{
+  "name": "invalid_action_auto_fold",
+  "description": "seat returns junk action, runner auto-folds",
+  "skip": "TODO-phase-0-followup",
+  "table": {
+    "seat_count": 2,
+    "small_blind": 10,
+    "big_blind": 20,
+    "ante": 0,
+    "starting_stacks": [1000, 1000]
+  },
+  "script": [],
+  "expected_stack_deltas": []
+}

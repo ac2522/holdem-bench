@@ -1,0 +1,16 @@
+{
+  "name": "check_around_to_bb",
+  "description": "2-seat; SB completes; BB checks. Proceed to flop with neither raising.",
+  "table": {
+    "seat_count": 2,
+    "small_blind": 10,
+    "big_blind": 20,
+    "ante": 0,
+    "starting_stacks": [1000, 1000]
+  },
+  "script": [
+    {"seat": 1, "action": "call"},
+    {"seat": 0, "action": "check"}
+  ],
+  "expected_stack_deltas": [-20, -20]
+}

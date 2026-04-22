@@ -1,0 +1,14 @@
+{
+  "name": "split_pot_same_hand",
+  "description": "two players show identical two-pair, split pot",
+  "skip": "TODO-phase-0-followup",
+  "table": {
+    "seat_count": 2,
+    "small_blind": 10,
+    "big_blind": 20,
+    "ante": 0,
+    "starting_stacks": [1000, 1000]
+  },
+  "script": [],
+  "expected_stack_deltas": []
+}

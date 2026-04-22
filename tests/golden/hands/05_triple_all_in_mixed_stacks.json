@@ -1,0 +1,14 @@
+{
+  "name": "triple_all_in_mixed_stacks",
+  "description": "3-seat with different stacks, multi-way all-in (side-pot test)",
+  "skip": "TODO-phase-0-followup",
+  "table": {
+    "seat_count": 3,
+    "small_blind": 10,
+    "big_blind": 20,
+    "ante": 0,
+    "starting_stacks": [500, 1000, 1500]
+  },
+  "script": [],
+  "expected_stack_deltas": []
+}

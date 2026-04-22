@@ -1,0 +1,15 @@
+{
+  "name": "heads_up_fold",
+  "description": "2-seat; SB folds preflop; BB wins 20 chip pot (SB+BB)",
+  "table": {
+    "seat_count": 2,
+    "small_blind": 10,
+    "big_blind": 20,
+    "ante": 0,
+    "starting_stacks": [1000, 1000]
+  },
+  "script": [
+    {"seat": 1, "action": "fold"}
+  ],
+  "expected_stack_deltas": [10, -10]
+}

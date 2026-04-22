@@ -28,6 +28,7 @@ dependencies = [
 dev = [
   "pytest>=8,<9",
   "pytest-cov>=5,<6",
+  "pytest-asyncio>=0.23,<1",
   "hypothesis>=6.100,<7",
   "ruff>=0.5,<1",
   "pyright>=1.1.370,<2",
@@ -66,6 +67,7 @@ reportMissingTypeStubs = false
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --cov=holdembench --cov-report=term-missing"
+asyncio_mode = "auto"
 markers = [
   "smoke: real-model smoke tests (not run by default)",
   "slow: slow tests",

@@ -79,6 +79,7 @@ class BaseAdapter(ABC, Agent):
         self._last_thinking: str | None = None
         self._last_prompt_hash: str = ""
         self._last_latency_ms: int = 0
+        self._last_parse_retries: int = 0
 
     # ----- Context management -----
 
@@ -110,11 +111,16 @@ class BaseAdapter(ABC, Agent):
 
     async def decide(self, ctx: DecisionContext) -> RawDecision:
         last_error: str | None = None
-        for _ in range(1 + MAX_PARSE_RETRIES):
+        # Reset per-decision counters.  Cost + usage accumulate across retries
+        # within a single decide() call so telemetry reflects the true spend.
+        self._reset_per_decision()
+        for attempt in range(1 + MAX_PARSE_RETRIES):
             start = time.perf_counter()
             call = await self._call_provider(ctx, retry_reason=last_error)
-            self._last_latency_ms = int((time.perf_counter() - start) * 1000)
+            self._last_latency_ms += int((time.perf_counter() - start) * 1000)
             self._accumulate_cost(call.usage)
+            if attempt > 0:
+                self._last_parse_retries += 1
             try:
                 parsed: AgentOutput = parse_agent_output(call.text)
             except AgentOutputParseError as e:
@@ -127,11 +133,33 @@ class BaseAdapter(ABC, Agent):
         self._last_thinking = None
         return RawDecision(kind="action", action="fold")
 
+    def _reset_per_decision(self) -> None:
+        self._last_usage = None
+        self._last_cost_usd = 0.0
+        self._last_thinking = None
+        self._last_latency_ms = 0
+        self._last_parse_retries = 0
+
     # ----- Accounting helpers -----
 
     def _accumulate_cost(self, usage: Usage) -> None:
-        self._last_usage = usage
-        self._last_cost_usd = self.pricing.cost_usd(
+        """Add this call's tokens + USD to the running per-decision totals.
+
+        Across retries the runner reads a single last_usage snapshot, so we
+        sum fields rather than replace — the telemetry reflects all provider
+        calls made to produce one RawDecision.
+        """
+        if self._last_usage is None:
+            self._last_usage = usage
+        else:
+            self._last_usage = Usage(
+                input_tokens=self._last_usage.input_tokens + usage.input_tokens,
+                output_tokens=self._last_usage.output_tokens + usage.output_tokens,
+                cache_read_tokens=self._last_usage.cache_read_tokens + usage.cache_read_tokens,
+                cache_write_tokens=self._last_usage.cache_write_tokens + usage.cache_write_tokens,
+                thinking_tokens=self._last_usage.thinking_tokens + usage.thinking_tokens,
+            )
+        self._last_cost_usd += self.pricing.cost_usd(
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             cache_read_tokens=usage.cache_read_tokens,
@@ -157,6 +185,11 @@ class BaseAdapter(ABC, Agent):
     @property
     def last_latency_ms(self) -> int:
         return self._last_latency_ms
+
+    @property
+    def last_parse_retries(self) -> int:
+        """Count of JSON/schema-parse retries for the most recent decide() call."""
+        return self._last_parse_retries
 
     @abstractmethod
     async def _call_provider(

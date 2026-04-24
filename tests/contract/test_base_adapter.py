@@ -164,6 +164,44 @@ async def test_prompt_hash_stashed_on_each_decide() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cost_accumulates_across_retries() -> None:
+    """When first attempt fails JSON parse, cost for BOTH calls must be counted."""
+    adapter = _FakeAdapter(
+        model_id="test:model",
+        responses=["bad", '{"kind": "action", "action": "fold"}'],
+    )
+    adapter.set_context(tournament=_tournament(), session=_session())
+    await adapter.decide(_ctx())
+    u = adapter.last_usage
+    assert u is not None
+    # 2 calls × 100 input / 10 output / 80 cache-read
+    assert u.input_tokens == _FAKE_INPUT_TOKENS * _EXPECTED_RETRY_ATTEMPTS
+    assert u.output_tokens == _FAKE_OUTPUT_TOKENS * _EXPECTED_RETRY_ATTEMPTS
+    assert u.cache_read_tokens == _FAKE_CACHE_READ_TOKENS * _EXPECTED_RETRY_ATTEMPTS
+    # And parse-retries should count the one recovered retry.
+    assert adapter.last_parse_retries == 1
+
+
+@pytest.mark.asyncio
+async def test_decide_resets_counters_between_calls() -> None:
+    """A second decide() call must not carry forward the first call's cost."""
+    adapter = _FakeAdapter(
+        model_id="test:model",
+        responses=[
+            '{"kind": "action", "action": "fold"}',
+            '{"kind": "action", "action": "call"}',
+        ],
+    )
+    adapter.set_context(tournament=_tournament(), session=_session())
+    await adapter.decide(_ctx())
+    first_cost = adapter.last_cost_usd
+    await adapter.decide(_ctx())
+    # Each decide() consumes exactly one response here, so costs should be equal.
+    assert adapter.last_cost_usd == pytest.approx(first_cost)
+    assert adapter.last_parse_retries == 0
+
+
+@pytest.mark.asyncio
 async def test_thinking_captured_from_output() -> None:
     adapter = _FakeAdapter(
         model_id="test:model",

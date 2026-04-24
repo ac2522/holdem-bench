@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from holdembench.agents.base import DecisionContext
 from holdembench.agents.base_adapter import BaseAdapter, ProviderCall, Usage
+from holdembench.agents.output_schema import AgentOutputParseError
 
 EXTENDED_THINKING_BUDGET_TOKENS = 5000
 
@@ -94,4 +95,7 @@ def _first_text_block(resp: Any) -> str:
     for block in resp.content:
         if getattr(block, "type", None) == "text":
             return block.text
-    raise ValueError("anthropic response had no text block")
+    # Extended-thinking responses can exhaust their budget without producing
+    # a text block; surface as AgentOutputParseError so the retry-then-autofold
+    # path in BaseAdapter.decide takes over instead of crashing the runner.
+    raise AgentOutputParseError("anthropic response had no text block")

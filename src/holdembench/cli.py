@@ -78,7 +78,9 @@ def run(
     )
     creds = _load_credentials_if_available(credentials_path)
     agents = _build_agents(set(raw["seats"].values()), creds=creds)
-    _wire_llm_contexts(cfg, agents)
+    # Runner refreshes TournamentContext + SessionContext at each session
+    # boundary (see runner._refresh_adapter_contexts) so session_id is
+    # correctly threaded for multi-session tournaments.
     result = asyncio.run(run_tournament(cfg, agents))
     click.echo(f"Done — log: {result.log_path}")
     click.echo(f"Final chip totals: {result.final_chip_totals}")
@@ -196,33 +198,3 @@ def _openrouter(model_id: str, p: ProviderCredentials) -> Agent:
     return OpenRouterAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
 
 
-def _wire_llm_contexts(cfg: TournamentConfig, agents: dict[str, Agent]) -> None:
-    """Populate each LLM adapter with a :class:`TournamentContext` + :class:`SessionContext`.
-
-    Current limitation (P1.1-B): when multiple seats share a single model_id
-    the same agent instance serves all of them and the set_context call will
-    only reflect the first seat.  See docs/reviews/follow-ups.md.
-    """
-    from holdembench.agents.prompt import SessionContext, TournamentContext  # noqa: PLC0415
-
-    seats_by_model: dict[str, str] = {}
-    for seat, model_id in cfg.seats.items():
-        seats_by_model.setdefault(model_id, seat)
-    for model_id, first_seat in seats_by_model.items():
-        agent = agents[model_id]
-        if not hasattr(agent, "set_context"):
-            continue
-        tournament = TournamentContext(
-            tournament_id=cfg.tournament_id,
-            seat=first_seat,
-            seat_count=len(cfg.seats),
-        )
-        session = SessionContext(
-            session_id=1,
-            small_blind=cfg.small_blind,
-            big_blind=cfg.big_blind,
-            ante=cfg.ante,
-            starting_stack_bb=max(1, cfg.starting_stack // cfg.big_blind),
-            orbit_budget_tokens=400,
-        )
-        agent.set_context(tournament=tournament, session=session)  # type: ignore[attr-defined]

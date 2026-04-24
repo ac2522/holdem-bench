@@ -41,6 +41,7 @@ import pokerkit
 
 import holdembench
 from holdembench.agents.base import Agent, DecisionContext
+from holdembench.agents.prompt import SessionContext, TournamentContext
 from holdembench.chat.content import ContentRejection, validate_content
 from holdembench.chat.protocol import ChatProtocol, ChatRuleViolation
 from holdembench.engine.config import TableConfig
@@ -424,6 +425,7 @@ def _emit_action_response_and_update_stats(
         stats["cache_write_tokens"] += int(getattr(last_usage, "cache_write_tokens", 0) or 0)
         stats["thinking_tokens"] += int(getattr(last_usage, "thinking_tokens", 0) or 0)
         stats["usd_total"] += cost
+        stats["retries"] += int(getattr(agent_obj, "last_parse_retries", 0) or 0)
     else:
         # Ensure stub-only models still show in the summary with zero totals.
         per_model_stats.setdefault(agent_obj.model_id, _empty_stats())
@@ -565,6 +567,43 @@ async def _run_hand(
     return hand_cost
 
 
+def _refresh_adapter_contexts(
+    *,
+    cfg: TournamentConfig,
+    seat_list: list[str],
+    agents_by_seat: dict[str, Agent],
+    session_id: int,
+) -> None:
+    """Call ``set_context(tournament=..., session=...)`` on each adapter that
+    supports it, so the rendered prompt reflects the current session id.
+
+    Adapters keyed by the same ``model_id`` share a single agent instance; the
+    first seat encountered wins the seat-identity slot (tracked as P1.1-B).
+    """
+    seen_models: set[str] = set()
+    for seat in seat_list:
+        agent = agents_by_seat[seat]
+        if not hasattr(agent, "set_context"):
+            continue
+        if agent.model_id in seen_models:
+            continue
+        seen_models.add(agent.model_id)
+        tournament = TournamentContext(
+            tournament_id=cfg.tournament_id,
+            seat=seat,
+            seat_count=len(cfg.seats),
+        )
+        session = SessionContext(
+            session_id=session_id,
+            small_blind=cfg.small_blind,
+            big_blind=cfg.big_blind,
+            ante=cfg.ante,
+            starting_stack_bb=max(1, cfg.starting_stack // cfg.big_blind),
+            orbit_budget_tokens=400,
+        )
+        agent.set_context(tournament=tournament, session=session)  # type: ignore[attr-defined]
+
+
 async def _run_session(
     *,
     cfg: TournamentConfig,
@@ -579,6 +618,12 @@ async def _run_session(
     session_id: int,
 ) -> float:
     """Run one session and return the session cost (USD).  Mutates *running_stacks* in-place."""
+    _refresh_adapter_contexts(
+        cfg=cfg,
+        seat_list=seat_list,
+        agents_by_seat=agents_by_seat,
+        session_id=session_id,
+    )
     log.emit(
         SessionStart(
             session_id=session_id,

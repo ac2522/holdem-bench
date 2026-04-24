@@ -65,6 +65,12 @@ tagged `phase-0-followup` when the repo is made public.
 **Fix sketch:** Either (a) tighten `_legal_actions()` in the runner to drop "raise" when the opponent is already committed for their whole stack, or (b) have `RandomAgent` catch + retry with "call".  (a) is the right long-term fix since it affects every adapter.
 **Workaround:** `test_canonical_log_token_budget.py` uses `TightPassiveAgent` instead.
 
+### P1.1-B — CLI shares one adapter instance across seats with the same model_id
+**File:** `src/holdembench/cli.py` (`_build_agents` + `_wire_llm_contexts`)
+**Found in:** Phase 1.1 Task 20 — when a YAML config maps two seats to the same model (e.g. Phase 1.6 9-seat variance baseline with two `anthropic:claude-haiku-4-5` seats), only the first seat's `TournamentContext` is attached; both seats' prompts will carry the first seat's name.
+**Fix sketch:** Change `run_tournament`'s agents parameter from `Mapping[model_id, Agent]` to `Mapping[seat_name, Agent]`, then construct one adapter per seat in the CLI.  All existing tests that build agents by model_id need updating (runner call site + each adapter constructor).
+**Workaround:** Phase 1.5 `evals/smoke-cheap-tier.yaml` uses unique model_ids per seat, so this limitation does not affect the cheap-tier smoke.
+
 ## P2s (collected from reviewers; prioritize for v0.2.0)
 
 1. `cards_hash` should commit the full deal sequence (not just hole cards) — `harness/runner.py:211`.

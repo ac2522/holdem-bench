@@ -1,0 +1,31 @@
+# Phase 1.5 smoke config — ~$3 target, 50 hands, 6 seats.
+#
+# All model_ids must match an entry in src/holdembench/agents/pricing_sheet.py.
+# Requires ~/.holdembench/credentials.toml with sections for anthropic, openai,
+# google, openrouter.
+#
+# Run:
+#   uv run holdembench run --config evals/smoke-cheap-tier.yaml --seed 2026 --real-time
+
+tournament_id: smoke-cheap-tier-2026-04-23
+seats:
+  Seat1: anthropic:claude-haiku-4-5
+  Seat2: openai:gpt-5-mini
+  Seat3: google:gemini-3-flash-preview
+  Seat4: openrouter:deepseek/deepseek-chat-v3
+  Seat5: openrouter:qwen/qwen3-32b
+  Seat6: stub:gto_approx              # solver anchor
+small_blind: 10
+big_blind: 20
+ante: 0
+starting_stack: 1000
+hand_cap: 50
+session_count: 1
+master_seed: 2026
+budget_ceilings_usd:
+  anthropic:claude-haiku-4-5: 1.00
+  openai:gpt-5-mini: 1.00
+  google:gemini-3-flash-preview: 1.00
+  openrouter:deepseek/deepseek-chat-v3: 0.50
+  openrouter:qwen/qwen3-32b: 0.50
+  stub:gto_approx: 0.01

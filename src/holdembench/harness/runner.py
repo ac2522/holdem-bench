@@ -52,6 +52,7 @@ from holdembench.events.schema import (
     ActionRequest,
     ActionResponse,
     AutoFold,
+    BudgetCircuitBreak,
     HandEnd,
     HandStart,
     SessionEnd,
@@ -84,6 +85,9 @@ class TournamentConfig:
     # When True (default), zero out elapsed_s / wall_clock_s and use a fixed
     # git_sha so byte-identical logs are produced for identical seeds.
     deterministic_time: bool = True
+    # Per-model USD ceilings (spec §8.5).  Breach of 2x ceiling triggers
+    # BudgetCircuitBreak + AutoFold for the seat's remaining hands.
+    budget_ceilings_usd: dict[str, float] | None = None
 
     def __post_init__(self) -> None:
         if not self.seats:
@@ -105,6 +109,10 @@ class TournamentConfig:
             raise ValueError(f"starting_stack must be > 0, got {self.starting_stack}")
         if self.hand_cap <= 0:
             raise ValueError(f"hand_cap must be > 0, got {self.hand_cap}")
+        if self.budget_ceilings_usd is not None:
+            for mid, v in self.budget_ceilings_usd.items():
+                if v <= 0:
+                    raise ValueError(f"budget_ceilings_usd[{mid}] must be > 0, got {v}")
         if self.session_count <= 0:
             raise ValueError(f"session_count must be > 0, got {self.session_count}")
 
@@ -116,6 +124,21 @@ class TournamentResult:
     log_path: Path
     manifest_path: Path
     final_chip_totals: dict[str, int]
+    per_model_cost: dict[str, dict[str, float]]
+    total_cost_usd: float
+
+
+def _empty_stats() -> dict[str, float]:
+    return {
+        "input_tokens": 0.0,
+        "output_tokens": 0.0,
+        "cache_read_tokens": 0.0,
+        "cache_write_tokens": 0.0,
+        "thinking_tokens": 0.0,
+        "usd_total": 0.0,
+        "retries": 0.0,
+        "timeouts": 0.0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -305,11 +328,100 @@ def _filter_chat_message(
 
 
 _ACTION_TIMEOUT_S = 60.0
+_BUDGET_BREACH_MULTIPLIER = 2.0
+
+
+def _check_circuit_breaker(
+    *,
+    log: EventLog,
+    seat_name: str,
+    model_id: str,
+    running_cost_by_seat: dict[str, float],
+    ceilings: dict[str, float] | None,
+    breached: set[str],
+) -> bool:
+    """Return True if *seat_name* is under the budget breaker.
+
+    Emits :class:`BudgetCircuitBreak` exactly once, on first breach.
+    The caller is responsible for the subsequent auto-fold.
+    """
+    if seat_name in breached:
+        return True
+    if ceilings is None:
+        return False
+    ceiling = ceilings.get(model_id)
+    if ceiling is None:
+        return False
+    actual = running_cost_by_seat.get(seat_name, 0.0)
+    threshold = _BUDGET_BREACH_MULTIPLIER * ceiling
+    if actual > threshold:
+        breached.add(seat_name)
+        log.emit(
+            BudgetCircuitBreak(
+                seat=seat_name,
+                threshold_usd=threshold,
+                actual_usd=actual,
+            )
+        )
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
 # Hand-level helpers (extracted to keep run_tournament statement count low)
 # ---------------------------------------------------------------------------
+
+
+def _emit_action_response_and_update_stats(
+    *,
+    log: EventLog,
+    agent_obj: Agent,
+    hand_id: str,
+    seat_name: str,
+    raw: RawDecision,
+    final_message: str | None,
+    running_cost_by_seat: dict[str, float],
+    per_model_stats: dict[str, dict[str, float]],
+) -> float:
+    """Emit ``ActionResponse`` + accumulate per-seat / per-model cost & usage.
+
+    Returns the USD cost for this single decision (caller adds it to ``hand_cost``).
+    """
+    last_usage = getattr(agent_obj, "last_usage", None)
+    tokens = int(getattr(last_usage, "output_tokens", 0) or 0)
+    cost = float(getattr(agent_obj, "last_cost_usd", 0.0) or 0.0)
+    thinking = getattr(agent_obj, "last_thinking", None)
+    prompt_hash = str(getattr(agent_obj, "last_prompt_hash", "") or "")
+    latency_ms = int(getattr(agent_obj, "last_latency_ms", 0) or 0)
+    log.emit(
+        ActionResponse(
+            hand_id=hand_id,
+            seat=seat_name,
+            kind=raw.kind,
+            action=raw.action,
+            amount=raw.amount,
+            message=final_message,
+            tokens=tokens,
+            latency_ms=latency_ms,
+            cost_usd=cost,
+            model_id=agent_obj.model_id,
+            prompt_hash=prompt_hash,
+            thinking=thinking,
+        )
+    )
+    running_cost_by_seat[seat_name] = running_cost_by_seat.get(seat_name, 0.0) + cost
+    if last_usage is not None:
+        stats = per_model_stats.setdefault(agent_obj.model_id, _empty_stats())
+        stats["input_tokens"] += int(getattr(last_usage, "input_tokens", 0) or 0)
+        stats["output_tokens"] += int(getattr(last_usage, "output_tokens", 0) or 0)
+        stats["cache_read_tokens"] += int(getattr(last_usage, "cache_read_tokens", 0) or 0)
+        stats["cache_write_tokens"] += int(getattr(last_usage, "cache_write_tokens", 0) or 0)
+        stats["thinking_tokens"] += int(getattr(last_usage, "thinking_tokens", 0) or 0)
+        stats["usd_total"] += cost
+    else:
+        # Ensure stub-only models still show in the summary with zero totals.
+        per_model_stats.setdefault(agent_obj.model_id, _empty_stats())
+    return cost
 
 
 async def _run_hand(
@@ -321,6 +433,9 @@ async def _run_hand(
     agents_by_seat: dict[str, Agent],
     chat: ChatProtocol,
     running_stacks: dict[str, int],
+    running_cost_by_seat: dict[str, float],
+    breached: set[str],
+    per_model_stats: dict[str, dict[str, float]],
     session_id: int,
     hand_num: int,
 ) -> float:
@@ -360,6 +475,22 @@ async def _run_hand(
         if idx is None:
             break
         seat_name = seat_list[idx]
+        agent_obj_pre = agents_by_seat[seat_name]
+        if _check_circuit_breaker(
+            log=log,
+            seat_name=seat_name,
+            model_id=agent_obj_pre.model_id,
+            running_cost_by_seat=running_cost_by_seat,
+            ceilings=cfg.budget_ceilings_usd,
+            breached=breached,
+        ):
+            log.emit(AutoFold(seat=seat_name, reason="budget_circuit_break"))
+            try:
+                table.apply_fold(idx)
+            except ValueError:
+                table.apply_check_or_call(idx)
+            chat.mark_folded(seat_name)
+            continue
         legal = _legal_actions(table)
         log.emit(
             ActionRequest(
@@ -399,28 +530,15 @@ async def _run_hand(
             continue
         raw = validated
         final_message = _filter_chat_message(log=log, seat_name=seat_name, raw=raw, chat=chat)
-        agent_obj = agents_by_seat[seat_name]
-        last_usage = getattr(agent_obj, "last_usage", None)
-        tokens = int(getattr(last_usage, "output_tokens", 0) or 0)
-        cost = float(getattr(agent_obj, "last_cost_usd", 0.0) or 0.0)
-        thinking = getattr(agent_obj, "last_thinking", None)
-        prompt_hash = str(getattr(agent_obj, "last_prompt_hash", "") or "")
-        latency_ms = int(getattr(agent_obj, "last_latency_ms", 0) or 0)
-        log.emit(
-            ActionResponse(
-                hand_id=hand_id,
-                seat=seat_name,
-                kind=raw.kind,
-                action=raw.action,
-                amount=raw.amount,
-                message=final_message,
-                tokens=tokens,
-                latency_ms=latency_ms,
-                cost_usd=cost,
-                model_id=agent_obj.model_id,
-                prompt_hash=prompt_hash,
-                thinking=thinking,
-            )
+        cost = _emit_action_response_and_update_stats(
+            log=log,
+            agent_obj=agents_by_seat[seat_name],
+            hand_id=hand_id,
+            seat_name=seat_name,
+            raw=raw,
+            final_message=final_message,
+            running_cost_by_seat=running_cost_by_seat,
+            per_model_stats=per_model_stats,
         )
         hand_cost += cost
         _apply_raw_to_table(table, idx, raw)
@@ -447,6 +565,9 @@ async def _run_session(
     seat_count: int,
     agents_by_seat: dict[str, Agent],
     running_stacks: dict[str, int],
+    running_cost_by_seat: dict[str, float],
+    breached: set[str],
+    per_model_stats: dict[str, dict[str, float]],
     session_id: int,
 ) -> float:
     """Run one session and return the session cost (USD).  Mutates *running_stacks* in-place."""
@@ -471,6 +592,9 @@ async def _run_session(
             agents_by_seat=agents_by_seat,
             chat=chat,
             running_stacks=running_stacks,
+            running_cost_by_seat=running_cost_by_seat,
+            breached=breached,
+            per_model_stats=per_model_stats,
             session_id=session_id,
             hand_num=hand_num,
         )
@@ -536,6 +660,9 @@ async def run_tournament(
             )
         )
         running_stacks = {s: cfg.starting_stack for s in seat_list}
+        running_cost_by_seat: dict[str, float] = {s: 0.0 for s in seat_list}
+        breached: set[str] = set()
+        per_model_stats: dict[str, dict[str, float]] = {}
         total_cost = 0.0
         for session_id in range(1, cfg.session_count + 1):
             total_cost += await _run_session(
@@ -545,6 +672,9 @@ async def run_tournament(
                 seat_count=seat_count,
                 agents_by_seat=agents_by_seat,
                 running_stacks=running_stacks,
+                running_cost_by_seat=running_cost_by_seat,
+                breached=breached,
+                per_model_stats=per_model_stats,
                 session_id=session_id,
             )
         winner_seat = max(running_stacks, key=lambda s: running_stacks[s])
@@ -575,4 +705,6 @@ async def run_tournament(
         log_path=log_path,
         manifest_path=manifest_path,
         final_chip_totals=dict(running_stacks),
+        per_model_cost=per_model_stats,
+        total_cost_usd=total_cost,
     )

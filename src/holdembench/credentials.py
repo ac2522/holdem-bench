@@ -10,7 +10,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 
 class CredentialsFileMissing(FileNotFoundError):
@@ -23,11 +23,13 @@ class ProviderCredentials:
     base_url: str | None = None
 
 
+def _empty_provider_map() -> dict[str, ProviderCredentials]:
+    return {}
+
+
 @dataclass(frozen=True)
 class Credentials:
-    _by_provider: dict[str, ProviderCredentials] = field(
-        default_factory=lambda: dict[str, ProviderCredentials]()
-    )
+    _by_provider: dict[str, ProviderCredentials] = field(default_factory=_empty_provider_map)
 
     def get(self, provider: str) -> ProviderCredentials:
         try:
@@ -55,16 +57,15 @@ def load_credentials(path: Path | None = None) -> Credentials:
     resolved = path if path is not None else default_credentials_path()
     if not resolved.exists():
         raise CredentialsFileMissing(f"credentials file not found: {resolved}")
-    raw = cast("dict[str, Any]", tomllib.loads(resolved.read_text()))
+    raw: dict[str, Any] = tomllib.loads(resolved.read_text())
     by_provider: dict[str, ProviderCredentials] = {}
     for provider, section in raw.items():
         if not isinstance(section, dict):
             continue
-        section_typed = cast("dict[str, Any]", section)
-        api_key_val = section_typed.get("api_key")
+        api_key_val = section.get("api_key")  # type: ignore[reportUnknownMemberType]
         if not isinstance(api_key_val, str):
             raise ValueError(f"provider {provider!r} missing required string `api_key`")
-        base_url_val = section_typed.get("base_url")
+        base_url_val = section.get("base_url")  # type: ignore[reportUnknownMemberType]
         if base_url_val is not None and not isinstance(base_url_val, str):
             raise ValueError(f"provider {provider!r} `base_url` must be a string if set")
         by_provider[provider] = ProviderCredentials(api_key=api_key_val, base_url=base_url_val)

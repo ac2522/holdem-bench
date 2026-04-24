@@ -42,6 +42,9 @@ tagged `phase-0-followup` when the repo is made public.
 - `test_side_pot_sum_equals_committed_chips` — after any action sequence, `sum(pots) == total committed chips`.
 - `test_showdown_winners_non_empty_and_sum_to_pot` — on every showdown, winners list non-empty; chip distribution sums to pot.
 - `test_canonical_action_log_within_token_budget` — serialized action log for any hand fits in the cache-breakpoint token budget.
+**⚠️ Partially resolved in Phase 1.1 Task 18**:
+- `test_canonical_action_log_fits_in_budget` landed in `tests/property/test_canonical_log_token_budget.py`.
+- The two showdown invariants are blocked on P1-B (showdown emission); deferred until that lands.
 
 ### P1-G — All 15 event types constructed in tests
 **Files:** `tests/**`
@@ -52,6 +55,15 @@ tagged `phase-0-followup` when the repo is made public.
 **File:** `tests/integration/test_runner.py`
 **Why deferred:** First-and-last-event assertion catches gross breakage.
 **Fix:** Add a regex-like state machine that validates events follow the grammar: `tournament_start (session_start (hand_start deal* (action_request action_response)* community_deal* showdown? hand_end)+ session_end)+ tournament_end`. Fail the test on any ordering violation.
+**✅ Resolved in Phase 1.1 Task 18** — `tests/integration/test_event_ordering_state_machine.py` has two tests (single-session and multi-session) running the grammar state machine against stub-only tournaments.
+
+## Phase 1 new follow-ups
+
+### P1.1-A — RandomAgent emits raise=40 when opponent is already covered
+**File:** `src/holdembench/baselines/random_agent.py`, `src/holdembench/harness/runner.py`
+**Found in:** Phase 1.1 Task 18 — a 150-hand `RandomAgent` canonical-log test surfaced `ValueError("invalid raise to 40: The player is already covered by a previous bet/raise...")` from `Table.apply_raise`.  Validator sees "raise" in `ctx.legal` but the min_raise is already past what the opponent can call.
+**Fix sketch:** Either (a) tighten `_legal_actions()` in the runner to drop "raise" when the opponent is already committed for their whole stack, or (b) have `RandomAgent` catch + retry with "call".  (a) is the right long-term fix since it affects every adapter.
+**Workaround:** `test_canonical_log_token_budget.py` uses `TightPassiveAgent` instead.
 
 ## P2s (collected from reviewers; prioritize for v0.2.0)
 

@@ -32,3 +32,9 @@ Thumbs.db
 
 # Project — large result artifacts (tracked separately via releases)
 results/**/events.jsonl.gz
+
+# Phase 1+ credentials — NEVER commit
+credentials*
+*.credentials
+.holdembench/
+results/smoke-*

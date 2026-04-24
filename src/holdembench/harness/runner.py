@@ -399,6 +399,13 @@ async def _run_hand(
             continue
         raw = validated
         final_message = _filter_chat_message(log=log, seat_name=seat_name, raw=raw, chat=chat)
+        agent_obj = agents_by_seat[seat_name]
+        last_usage = getattr(agent_obj, "last_usage", None)
+        tokens = int(getattr(last_usage, "output_tokens", 0) or 0)
+        cost = float(getattr(agent_obj, "last_cost_usd", 0.0) or 0.0)
+        thinking = getattr(agent_obj, "last_thinking", None)
+        prompt_hash = str(getattr(agent_obj, "last_prompt_hash", "") or "")
+        latency_ms = int(getattr(agent_obj, "last_latency_ms", 0) or 0)
         log.emit(
             ActionResponse(
                 hand_id=hand_id,
@@ -407,13 +414,15 @@ async def _run_hand(
                 action=raw.action,
                 amount=raw.amount,
                 message=final_message,
-                tokens=0,
-                latency_ms=0,
-                cost_usd=0.0,
-                model_id=agents_by_seat[seat_name].model_id,
-                prompt_hash="",
+                tokens=tokens,
+                latency_ms=latency_ms,
+                cost_usd=cost,
+                model_id=agent_obj.model_id,
+                prompt_hash=prompt_hash,
+                thinking=thinking,
             )
         )
+        hand_cost += cost
         _apply_raw_to_table(table, idx, raw)
 
         # Mark folded seats so they cannot chat for the rest of this hand

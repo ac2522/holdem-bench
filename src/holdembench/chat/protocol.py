@@ -6,11 +6,9 @@ Enforcement layer that sits between agents and the event log.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
 
 from holdembench.chat.tokenizer import count_tokens
-
-ChatKind = Literal["action", "probe", "probe_reply"]
+from holdembench.types import ChatKind
 
 MIN_PROBE_TOKENS = 10
 MIN_PROBE_REPLY_TOKENS = 20

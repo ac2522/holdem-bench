@@ -61,6 +61,7 @@ from holdembench.events.schema import (
     ValidatorRejection,
 )
 from holdembench.harness.manifest import write_manifest
+from holdembench.types import ActionName
 
 _SEAT_KEY_RE = re.compile(r"^Seat\d+$")
 
@@ -146,9 +147,9 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def _legal_actions(table: Table) -> list[str]:
+def _legal_actions(table: Table) -> list[ActionName]:
     """Return a conservative legal-action list.  Phase 0: always fold + check/call + raise."""
-    actions: list[str] = ["fold"]
+    actions: list[ActionName] = ["fold"]
     if table.current_bet() == 0:
         actions.append("check")
     else:
@@ -365,7 +366,7 @@ async def _run_hand(
                 hand_id=hand_id,
                 to_seat=seat_name,
                 street="preflop",  # Phase 0: placeholder — street tracking in Phase 1
-                legal=legal,  # type: ignore[arg-type]
+                legal=legal,
                 timeout_s=_ACTION_TIMEOUT_S,
                 budget_remaining=chat.budget_remaining(seat_name),
             )
@@ -374,7 +375,7 @@ async def _run_hand(
             seat=seat_name,
             hand_id=hand_id,
             street="preflop",  # Phase 0: placeholder — street tracking in Phase 1
-            legal=legal,  # type: ignore[arg-type]
+            legal=tuple(legal),
             stacks=dict(running_stacks),
             board=(),
             hole=tuple(deck[idx * 2 : idx * 2 + 2]),

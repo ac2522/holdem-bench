@@ -6,10 +6,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from holdembench.types import ActionKind, ActionName, Street
+
 SCHEMA_VERSION = "1.0"
 
 __all__ = [
-    "_Base",
+    "ActionKind",
+    "ActionName",
     "ActionRequest",
     "ActionResponse",
     "AutoFold",
@@ -23,6 +26,7 @@ __all__ = [
     "SessionEnd",
     "SessionStart",
     "Showdown",
+    "Street",
     "TournamentEnd",
     "TournamentStart",
     "ValidatorRejection",
@@ -79,11 +83,6 @@ class CommunityDeal(_Base):
     type: Literal["community_deal"] = "community_deal"
     street: Literal["flop", "turn", "river"]
     cards: list[str]
-
-
-type Street = Literal["preflop", "flop", "turn", "river"]
-type ActionKind = Literal["action", "probe", "probe_reply"]
-type ActionName = Literal["fold", "check", "call", "raise"]
 
 
 class ActionRequest(_Base):
@@ -227,11 +226,11 @@ _EVENT_TYPES: dict[str, type[_Base]] = {
 }
 
 
-def parse_event(data: dict[str, object]) -> _Base:
+def parse_event(data: dict[str, object]) -> Event:
     t = data.get("type")
     if t is None:
         raise ValueError("event has no `type` field")
-    cls = _EVENT_TYPES.get(str(t))  # type: ignore[arg-type]
+    cls = _EVENT_TYPES.get(str(t))
     if cls is None:
         raise ValueError(f"unknown event type: {t!r}")
-    return cls.model_validate(data)
+    return cls.model_validate(data)  # type: ignore[return-value]

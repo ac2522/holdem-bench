@@ -20,16 +20,19 @@ tagged `phase-0-followup` when the repo is made public.
 **Files:** `events/schema.py`, `engine/validator.py`, `agents/base.py`, `chat/protocol.py`
 **Why deferred:** Refactor, no functional bug today. Current tests pass because the aliases happen to match.
 **Fix:** Create `src/holdembench/types.py` with `ActionName`, `Street`, `ActionKind`, `ChatKind` as PEP 695 type aliases. All four modules import from there.
+**✅ Resolved in Phase 1.0 Task 1** — canonical `src/holdembench/types.py` now exports `ActionName`, `ActionKind`, `ChatKind`, `Street`; schema / validator / chat protocol / agent base all import from there.
 
 ### P1-D — Fix `_Base` leakage; `parse_event` return type
 **File:** `events/schema.py`
 **Why deferred:** Functional; the narrowing loss is cosmetic to external consumers.
 **Fix:** Remove `_Base` from `__all__`. Change `parse_event` signature to return `Event` (the TypeAlias). Rely on `TypeAdapter(Event)` for dispatch.
+**✅ Resolved in Phase 1.0 Task 1** — `_Base` removed from `__all__`; `parse_event` now returns `Event` (with a single `# type: ignore[return-value]` where the registry-dict lookup defeats narrowing).
 
 ### P1-E — Merge `RawDecision` / `ActionResponse` invariant validation
 **Files:** `engine/validator.py`, `events/schema.py`
 **Why deferred:** The duplication is not causing drift yet.
 **Fix:** Make `RawDecision` a frozen pydantic `BaseModel` with the same `kind→action`/`kind→message` validator as `ActionResponse`. Construct `ActionResponse` from a `RawDecision` field-for-field where possible.
+**✅ Resolved in Phase 1.0 Task 1** — `RawDecision` is now a frozen pydantic `BaseModel` with the same `@model_validator` invariant as `ActionResponse`; invalid actions are now rejected at construction (pydantic Literal + model_validator), making the invariant stronger than before.
 
 ### P1-F — Missing property-test invariants (spec §12.1 Layer 2)
 **File:** `tests/property/`

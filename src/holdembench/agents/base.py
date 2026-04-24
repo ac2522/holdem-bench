@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Protocol
 
 from holdembench.engine.validator import RawDecision
-
-Street = Literal["preflop", "flop", "turn", "river"]
+from holdembench.types import ActionName, Street
 
 
 @dataclass(frozen=True)
@@ -42,7 +41,7 @@ class DecisionContext:
     seat: str
     hand_id: str
     street: Street
-    legal: list[Literal["fold", "check", "call", "raise"]]
+    legal: tuple[ActionName, ...]
     stacks: dict[str, int]
     board: tuple[str, ...]
     hole: tuple[str, ...]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from holdembench.engine.config import TableConfig
 from holdembench.engine.table import Table
@@ -29,12 +30,10 @@ def test_validator_accepts_fold() -> None:
 
 
 def test_validator_rejects_unknown_action() -> None:
-    t = Table(_cfg())
-    v = TDAValidator(t)
-    seat = t.next_actor()
-    assert seat is not None
-    with pytest.raises(ValidationError):
-        v.check(seat, RawDecision(kind="action", action="nuke"))  # type: ignore[arg-type]
+    # Unknown actions are now rejected at RawDecision construction time
+    # (pydantic Literal enforcement), not at TDAValidator.check().
+    with pytest.raises(PydanticValidationError):
+        RawDecision(kind="action", action="nuke")  # type: ignore[arg-type]
 
 
 def test_validator_rejects_below_min_raise() -> None:
@@ -56,12 +55,11 @@ def test_validator_accepts_legal_raise() -> None:
 
 
 def test_validator_rejects_probe_without_message() -> None:
-    t = Table(_cfg())
-    v = TDAValidator(t)
-    seat = t.next_actor()
-    assert seat is not None
-    with pytest.raises(ValidationError, match="message"):
-        v.check(seat, RawDecision(kind="probe", message=""))
+    # Probe/probe_reply without a non-empty message is rejected at
+    # RawDecision construction (pydantic model_validator), so the invariant
+    # now holds wherever a RawDecision exists — not only at validator time.
+    with pytest.raises(PydanticValidationError, match="message"):
+        RawDecision(kind="probe", message="")
 
 
 def test_validator_rejects_action_from_wrong_seat() -> None:

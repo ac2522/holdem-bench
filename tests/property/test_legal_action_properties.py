@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from pydantic import ValidationError as PydanticValidationError
 
 from holdembench.engine.config import TableConfig
 from holdembench.engine.table import Table
@@ -27,16 +28,15 @@ def _fresh_table() -> Table:
 @given(st.text(min_size=1, max_size=20))
 @settings(max_examples=100, deadline=None)
 def test_invalid_action_names_always_rejected(bad: str) -> None:
-    t = _fresh_table()
-    v = TDAValidator(t)
-    seat = t.next_actor()
-    assert seat is not None
     if bad in {"fold", "check", "call", "raise"}:
         return  # skip — valid name
+    # Unknown action names are now rejected at RawDecision construction
+    # (pydantic Literal enforcement) rather than at TDAValidator.check()
+    # time — stricter and prevents bad data from ever existing.
     try:
-        v.check(seat, RawDecision(kind="action", action=bad))  # type: ignore[arg-type]
-        pytest.fail(f"validator accepted unknown action {bad!r}")
-    except ValidationError:
+        RawDecision(kind="action", action=bad)  # type: ignore[arg-type]
+        pytest.fail(f"RawDecision accepted unknown action {bad!r}")
+    except PydanticValidationError:
         pass
 
 

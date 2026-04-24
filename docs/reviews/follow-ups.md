@@ -10,6 +10,7 @@ tagged `phase-0-followup` when the repo is made public.
 **File:** `src/holdembench/harness/runner.py:140-146`
 **Why deferred:** The broad catch works for the known pokerkit "can't fold without aggression" edge case. All tests pass. The risk is that future pokerkit versions could throw a different `ValueError` from the same call site and be silently coerced to a check.
 **Fix:** Narrow to the specific pokerkit exception type (or inspect the error message). Emit a log event on the downgrade.
+**✅ Resolved in Phase 1.1 Task 17** — all three `apply_fold` catches in the runner now require the message `"no reason for this player to fold"`; any other ValueError propagates.  New test `test_unexpected_fold_error_message_is_reraised` pins the behaviour.
 
 ### P1-B — Emit `Showdown` events + wire EV adjustment
 **File:** `src/holdembench/harness/runner.py`, `src/holdembench/engine/ev_adjustment.py`

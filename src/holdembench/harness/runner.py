@@ -181,22 +181,27 @@ def _legal_actions(table: Table) -> list[ActionName]:
     return actions
 
 
+_POKERKIT_NO_REASON_TO_FOLD = "no reason for this player to fold"
+
+
 def _apply_raw_to_table(table: Table, idx: int, raw: RawDecision) -> None:
     """Translate a validated ``RawDecision`` into a pokerkit state mutation.
 
-    Pokerkit (in TOURNAMENT mode) raises ``ValueError`` when a player tries to
-    fold when they have no need to (e.g. BB checking back preflop when no one
-    raised).  In that case we silently downgrade to check_or_call, which is
-    the correct action.
+    Pokerkit (in TOURNAMENT mode) raises ``ValueError("There is no reason for
+    this player to fold.")`` when a player tries to fold with no outstanding
+    bet to call (e.g. BB checking back preflop).  We downgrade that specific
+    case to ``check_or_call``.  Any other ValueError from ``apply_fold`` is
+    re-raised so future pokerkit invariants are not silently swallowed.
     """
     if raw.kind != "action":
         return  # probes are not driven through pokerkit in Phase 0
     if raw.action == "fold":
         try:
             table.apply_fold(idx)
-        except ValueError:
-            # Player cannot fold (no reason to fold — they can check).
-            # Downgrade to check_or_call.
+        except ValueError as exc:
+            if _POKERKIT_NO_REASON_TO_FOLD not in str(exc).lower():
+                raise
+            # Known pokerkit rejection: downgrade to check_or_call.
             table.apply_check_or_call(idx)
     elif raw.action in {"check", "call"}:
         table.apply_check_or_call(idx)
@@ -278,9 +283,10 @@ async def _validate_with_retry(
         log.emit(AutoFold(seat=seat_name, reason="invalid_after_retry"))
         try:
             table.apply_fold(idx)
-        except ValueError:
-            # Cannot fold (e.g. BB checking back with no need to fold);
-            # fall back to check_or_call so the hand can progress.
+        except ValueError as exc:
+            if _POKERKIT_NO_REASON_TO_FOLD not in str(exc).lower():
+                raise
+            # Cannot fold (BB checking back with no need to fold); downgrade.
             table.apply_check_or_call(idx)
         chat.mark_folded(seat_name)
         return None
@@ -487,7 +493,9 @@ async def _run_hand(
             log.emit(AutoFold(seat=seat_name, reason="budget_circuit_break"))
             try:
                 table.apply_fold(idx)
-            except ValueError:
+            except ValueError as exc:
+                if _POKERKIT_NO_REASON_TO_FOLD not in str(exc).lower():
+                    raise
                 table.apply_check_or_call(idx)
             chat.mark_folded(seat_name)
             continue

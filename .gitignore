@@ -34,7 +34,9 @@ Thumbs.db
 results/**/events.jsonl.gz
 
 # Phase 1+ credentials — NEVER commit
-credentials*
-*.credentials
+# Root-level only: the module src/holdembench/credentials.py is NOT a secret.
+/credentials*
+*.credentials.toml
+*.credentials.json
 .holdembench/
 results/smoke-*

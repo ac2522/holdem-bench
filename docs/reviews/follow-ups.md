@@ -71,12 +71,10 @@ tagged `phase-0-followup` when the repo is made public.
 **Proper fix:** Decide whether HoldEmBench is a tournament (eliminate busted seats, re-deal with reduced seat_count) or a cash game (auto-rebuy to `starting_stack`).  Spec §X is silent.  For a tournament: implement seat-elimination + button rotation + chat-protocol seat-list rebalancing.
 
 ### P1.1-D — Stack deltas don't sum to zero on multi-way all-ins
-**File:** `src/holdembench/harness/runner.py` (`_compute_stack_deltas`), pokerkit interaction
-**Found in:** Phase 1.5 smoke (2026-04-26) — `hand_end.stack_deltas` for hand 3 summed to **−2930** (chips disappeared rather than being awarded to the winner).  Hand 2 was off by 210 (pre-flop, 5-way limped).  Chip totals at `tournament_end` were 2860 instead of 6000.
-**Hypothesis:** `state.stacks[i]` is read before pokerkit's `CHIPS_PUSHING` + `CHIPS_PULLING` automations have settled side pots; or `BET_COLLECTION` is keeping committed chips parked in `state.bets` until the next street.  Both `_compute_stack_deltas` and the running-stack mutation downstream are based on this potentially-stale read.
-**Repro:** Re-run `evals/smoke-openrouter-only.yaml --seed 2026` and inspect `jq '.stack_deltas|to_entries|map(.value)|add' results/.../events.jsonl` for hand_end events — non-zero on multi-way pots.
-**Fix sketch:** After the hand ends, drive pokerkit forward (or call its `runout`/showdown helpers) until `state.bets` is empty and `state.pots` is settled before reading `state.stacks`.  Add a property test that asserts `sum(stack_deltas.values()) == 0` for every hand_end across a full RandomAgent tournament.
-**Severity:** High — this corrupts every chip-EV-based scoring metric.  Phase 1.6 dry run is blocked on this.
+**File:** `src/holdembench/engine/table.py`, `src/holdembench/harness/runner.py`
+**Found in:** Phase 1.5 smoke (2026-04-26).
+**Root cause:** `Table` did not include pokerkit's `Automation.BOARD_DEALING` and `Automation.RUNOUT_COUNT_SELECTION`.  Between streets, pokerkit's `actor_index` returns `None` while `status` is still `True` (waiting for the flop/turn/river to be dealt).  The runner loop's `if idx is None: break` then exits the hand prematurely — chips committed during preflop stay parked in `state.pots`, never get distributed to a winner, and the runner reads stale `state.stacks`.  The bug was masked in heads-up where one fold ends the hand before any street transition.
+**✅ Resolved 2026-04-26:** Added the two missing automations to `_AUTOMATIONS` in `engine/table.py`.  Pokerkit now auto-deals community cards, action continues postflop, and `state.stacks` is final-and-correct when the runner reads it.  New regression suite `tests/property/test_chip_conservation.py` (21 tests) asserts every `hand_end.stack_deltas` sums to zero and every `tournament_end.final_chip_totals` sums to the starting bank, parameterized over 2/3/6/9 seats with both `TightPassiveAgent` and `RandomAgent`.
 
 ### P1.1-B — CLI shares one adapter instance across seats with the same model_id
 **File:** `src/holdembench/cli.py` (`_build_agents` + `_wire_llm_contexts`)

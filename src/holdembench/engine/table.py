@@ -36,6 +36,12 @@ _AUTOMATIONS: tuple[Automation, ...] = cast(
         Automation.CHIPS_PUSHING,
         Automation.CHIPS_PULLING,
         Automation.HOLE_DEALING,
+        # Without these two automations, between-street state has
+        # actor_index=None and the runner loop exits before the flop is
+        # dealt — the pot stays in state.pots, never gets pulled to the
+        # winner, and chips appear to vanish.  See P1.1-D.
+        Automation.BOARD_DEALING,
+        Automation.RUNOUT_COUNT_SELECTION,
     ),
 )
 

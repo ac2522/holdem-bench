@@ -100,10 +100,10 @@ async def test_xai_agent_inherits_openai_transport() -> None:
 async def test_openrouter_agent_preserves_vendor_slash_name() -> None:
     client = _FakeOpenAI('{"kind": "action", "action": "call"}')
     agent = OpenRouterAgent(
-        model_id="openrouter:deepseek/deepseek-chat-v3",
+        model_id="openrouter:deepseek/deepseek-chat-v3.1",
         client=client,
     )
     agent.set_context(tournament=_tctx(), session=_sctx())
     raw = await agent.decide(_ctx())
     assert raw.action == "call"
-    assert client.last_model == "deepseek/deepseek-chat-v3"
+    assert client.last_model == "deepseek/deepseek-chat-v3.1"

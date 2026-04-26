@@ -172,17 +172,24 @@ def _git_sha() -> str:
 
 
 def _legal_actions(table: Table) -> list[ActionName]:
-    """Return a conservative legal-action list.  Phase 0: always fold + check/call + raise."""
+    """Return a conservative legal-action list.
+
+    "raise" is omitted when every opponent is already all-in-covered;
+    pokerkit signals this via ``min_completion_betting_or_raising_to_amount=None``.
+    See :meth:`Table.can_raise`.
+    """
     actions: list[ActionName] = ["fold"]
     if table.current_bet() == 0:
         actions.append("check")
     else:
         actions.append("call")
-    actions.append("raise")
+    if table.can_raise():
+        actions.append("raise")
     return actions
 
 
 _POKERKIT_NO_REASON_TO_FOLD = "no reason for this player to fold"
+_POKERKIT_ALREADY_COVERED = "already covered by a previous bet/raise"
 
 
 def _apply_raw_to_table(table: Table, idx: int, raw: RawDecision) -> None:
@@ -207,7 +214,16 @@ def _apply_raw_to_table(table: Table, idx: int, raw: RawDecision) -> None:
     elif raw.action in {"check", "call"}:
         table.apply_check_or_call(idx)
     elif raw.action == "raise" and raw.amount is not None:
-        table.apply_raise(idx, to=raw.amount)
+        try:
+            table.apply_raise(idx, to=raw.amount)
+        except ValueError as exc:
+            # If the LLM picked "raise" while every opponent is already
+            # all-in-covered (a corner case _legal_actions now blocks but
+            # could still surface via stale prompt context after a re-deal),
+            # downgrade to check_or_call rather than crashing the run.
+            if _POKERKIT_ALREADY_COVERED not in str(exc).lower():
+                raise
+            table.apply_check_or_call(idx)
 
 
 def _compute_stack_deltas(
@@ -636,7 +652,15 @@ async def _run_session(
     )
     chat = ChatProtocol(seats=tuple(seat_list), budget_per_orbit=400, per_action_cap=80)
     session_cost = 0.0
+    hands_played = 0
     for hand_num in range(1, cfg.hand_cap + 1):
+        # Pokerkit refuses to deal a hand with any non-positive starting stack.
+        # When a seat busts we end the session early — chip-EV semantics are
+        # preserved (no auto-rebuy) and downstream scoring sees the true totals.
+        # Proper tournament elimination (re-seating, button rotation) is tracked
+        # as a Phase 1.1 follow-up (P1.1-C).
+        if any(running_stacks[s] <= 0 for s in seat_list):
+            break
         session_cost += await _run_hand(
             cfg=cfg,
             log=log,
@@ -651,11 +675,12 @@ async def _run_session(
             session_id=session_id,
             hand_num=hand_num,
         )
+        hands_played += 1
     log.emit(
         SessionEnd(
             session_id=session_id,
             final_stacks=dict(running_stacks),
-            total_hands=cfg.hand_cap,
+            total_hands=hands_played,
             total_cost_usd=session_cost,
         )
     )

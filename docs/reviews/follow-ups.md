@@ -62,8 +62,21 @@ tagged `phase-0-followup` when the repo is made public.
 ### P1.1-A — RandomAgent emits raise=40 when opponent is already covered
 **File:** `src/holdembench/baselines/random_agent.py`, `src/holdembench/harness/runner.py`
 **Found in:** Phase 1.1 Task 18 — a 150-hand `RandomAgent` canonical-log test surfaced `ValueError("invalid raise to 40: The player is already covered by a previous bet/raise...")` from `Table.apply_raise`.  Validator sees "raise" in `ctx.legal` but the min_raise is already past what the opponent can call.
-**Fix sketch:** Either (a) tighten `_legal_actions()` in the runner to drop "raise" when the opponent is already committed for their whole stack, or (b) have `RandomAgent` catch + retry with "call".  (a) is the right long-term fix since it affects every adapter.
-**Workaround:** `test_canonical_log_token_budget.py` uses `TightPassiveAgent` instead.
+**✅ Resolved in Phase 1.5 smoke run** — `_legal_actions()` now drops "raise" when `Table.can_raise()` returns False (pokerkit signals via `min_completion_betting_or_raising_to_amount=None`). The runner also narrows the "already covered" pokerkit error and downgrades it to `check_or_call` as a defence-in-depth fallback.
+
+### P1.1-C — Busted seats trigger non-positive-stack ValueError; session ends early
+**File:** `src/holdembench/harness/runner.py` (`_run_session`)
+**Found in:** Phase 1.5 smoke (2026-04-26) — gpt-4o-mini busted on hand 3, the next hand's `Table` constructor failed pokerkit's "Non-positive starting stacks" guard.
+**Workaround applied:** `_run_session` now `break`s out of its hand loop once any seat hits ≤ 0, and `total_hands` reflects hands actually played.  This preserves chip-EV semantics (no auto-rebuy) but ends the session whenever a player busts.
+**Proper fix:** Decide whether HoldEmBench is a tournament (eliminate busted seats, re-deal with reduced seat_count) or a cash game (auto-rebuy to `starting_stack`).  Spec §X is silent.  For a tournament: implement seat-elimination + button rotation + chat-protocol seat-list rebalancing.
+
+### P1.1-D — Stack deltas don't sum to zero on multi-way all-ins
+**File:** `src/holdembench/harness/runner.py` (`_compute_stack_deltas`), pokerkit interaction
+**Found in:** Phase 1.5 smoke (2026-04-26) — `hand_end.stack_deltas` for hand 3 summed to **−2930** (chips disappeared rather than being awarded to the winner).  Hand 2 was off by 210 (pre-flop, 5-way limped).  Chip totals at `tournament_end` were 2860 instead of 6000.
+**Hypothesis:** `state.stacks[i]` is read before pokerkit's `CHIPS_PUSHING` + `CHIPS_PULLING` automations have settled side pots; or `BET_COLLECTION` is keeping committed chips parked in `state.bets` until the next street.  Both `_compute_stack_deltas` and the running-stack mutation downstream are based on this potentially-stale read.
+**Repro:** Re-run `evals/smoke-openrouter-only.yaml --seed 2026` and inspect `jq '.stack_deltas|to_entries|map(.value)|add' results/.../events.jsonl` for hand_end events — non-zero on multi-way pots.
+**Fix sketch:** After the hand ends, drive pokerkit forward (or call its `runout`/showdown helpers) until `state.bets` is empty and `state.pots` is settled before reading `state.stacks`.  Add a property test that asserts `sum(stack_deltas.values()) == 0` for every hand_end across a full RandomAgent tournament.
+**Severity:** High — this corrupts every chip-EV-based scoring metric.  Phase 1.6 dry run is blocked on this.
 
 ### P1.1-B — CLI shares one adapter instance across seats with the same model_id
 **File:** `src/holdembench/cli.py` (`_build_agents` + `_wire_llm_contexts`)

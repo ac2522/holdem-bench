@@ -101,6 +101,15 @@ class Table:
             return self._config.big_blind
         return int(amount)
 
+    def can_raise(self) -> bool:
+        """True iff a raise is structurally legal for the current actor.
+
+        Pokerkit returns ``min_completion_betting_or_raising_to_amount=None``
+        when raising is impossible — typically because every opponent is
+        already all-in covered, so no further chips can be put at risk.
+        """
+        return self._state.min_completion_betting_or_raising_to_amount is not None
+
     def apply_raise(self, seat: int, to: int) -> None:
         if self._state.actor_index != seat:
             raise ValueError(f"seat {seat} is not the current actor")

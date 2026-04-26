@@ -18,7 +18,7 @@ def test_known_models_registered() -> None:
         "google:gemini-3-pro",
         "xai:grok-4",
         "moonshot:kimi-k2",
-        "openrouter:deepseek/deepseek-chat-v3",
+        "openrouter:deepseek/deepseek-chat-v3.1",
     }
     assert expected <= set(PRICING_SHEET)
 

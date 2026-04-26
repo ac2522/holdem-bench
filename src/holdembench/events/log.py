@@ -47,6 +47,10 @@ class EventLog:
             raise RuntimeError("EventLog used outside of with-block")
         line = event.model_dump_json()
         self._fh.write(line + "\n")
+        # Flush every event so live monitoring + crash-recovery see the
+        # same state as on-disk.  Cost is one syscall per event — negligible
+        # next to the LLM round-trip that produced it.
+        self._fh.flush()
 
     @staticmethod
     def replay(path: Path) -> Iterator[_Base]:

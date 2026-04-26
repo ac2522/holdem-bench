@@ -29,7 +29,9 @@ class OpenAIClientProtocol(Protocol):
     def chat(self) -> _ChatProto: ...
 
 
-# pydantic-compatible JSON Schema — mirrors AgentOutput.
+# JSON Schema mirroring AgentOutput.  Nullable fields use anyOf (not the
+# `type: [..., "null"]` shorthand) because Anthropic-via-OpenRouter rejects
+# the latter when paired with `enum`.  All providers accept anyOf.
 _AGENT_OUTPUT_JSON_SCHEMA: dict[str, Any] = {
     "name": "agent_output",
     "strict": True,
@@ -39,12 +41,14 @@ _AGENT_OUTPUT_JSON_SCHEMA: dict[str, Any] = {
         "properties": {
             "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
             "action": {
-                "type": ["string", "null"],
-                "enum": ["fold", "check", "call", "raise", None],
+                "anyOf": [
+                    {"type": "string", "enum": ["fold", "check", "call", "raise"]},
+                    {"type": "null"},
+                ],
             },
-            "amount": {"type": ["integer", "null"]},
-            "message": {"type": ["string", "null"]},
-            "thinking": {"type": ["string", "null"]},
+            "amount": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+            "message": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "thinking": {"anyOf": [{"type": "string"}, {"type": "null"}]},
         },
         "required": ["kind", "action", "amount", "message", "thinking"],
     },

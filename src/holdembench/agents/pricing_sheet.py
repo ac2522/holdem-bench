@@ -66,29 +66,26 @@ PRICING_SHEET: dict[str, Pricing] = {
         cache_read_per_mtok=0.03,
         cache_write_per_mtok=0.60,
     ),
-    # OpenRouter — routing fee included in quoted rates
-    "openrouter:deepseek/deepseek-chat-v3": Pricing(
-        input_per_mtok=0.14,
-        output_per_mtok=0.28,
+    # OpenRouter — rates fetched live from /api/v1/models on 2026-04-26.
+    "openrouter:deepseek/deepseek-chat-v3.1": Pricing(
+        input_per_mtok=0.15,
+        output_per_mtok=0.75,
     ),
     "openrouter:qwen/qwen3-32b": Pricing(
-        input_per_mtok=0.27,
-        output_per_mtok=0.60,
+        input_per_mtok=0.08,
+        output_per_mtok=0.24,
     ),
-    # OpenRouter-routed equivalents of native-adapter models.
-    # Use these when running smoke with a single OpenRouter key.
-    # Prices approximate native rates + ~5% OR markup; cache not surfaced.
-    "openrouter:anthropic/claude-haiku-4-5": Pricing(
-        input_per_mtok=1.05,
-        output_per_mtok=5.25,
+    "openrouter:anthropic/claude-haiku-4.5": Pricing(
+        input_per_mtok=1.0,
+        output_per_mtok=5.0,
     ),
     "openrouter:openai/gpt-4o-mini": Pricing(
-        input_per_mtok=0.165,
-        output_per_mtok=0.675,
+        input_per_mtok=0.15,
+        output_per_mtok=0.60,
     ),
-    "openrouter:google/gemini-flash-1.5": Pricing(
-        input_per_mtok=0.08,
-        output_per_mtok=0.32,
+    "openrouter:google/gemini-2.5-flash": Pricing(
+        input_per_mtok=0.30,
+        output_per_mtok=2.50,
     ),
 }
 

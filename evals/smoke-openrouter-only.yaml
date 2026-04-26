@@ -8,17 +8,14 @@
 # Run:
 #   uv run holdembench run --config evals/smoke-openrouter-only.yaml --seed 2026 --real-time
 #
-# Tradeoff vs smoke-cheap-tier.yaml: native adapter paths (Anthropic
-# cache_control, Google schema validation) are not exercised; everything
-# goes through the OpenAI-compat OpenRouter adapter.  Pipeline end-to-end
-# correctness is fully validated.
+# Model IDs verified against /api/v1/models on 2026-04-26.
 
-tournament_id: smoke-openrouter-2026-04-23
+tournament_id: smoke-openrouter-2026-04-26
 seats:
-  Seat1: openrouter:anthropic/claude-haiku-4-5
+  Seat1: openrouter:anthropic/claude-haiku-4.5
   Seat2: openrouter:openai/gpt-4o-mini
-  Seat3: openrouter:google/gemini-flash-1.5
-  Seat4: openrouter:deepseek/deepseek-chat-v3
+  Seat3: openrouter:google/gemini-2.5-flash
+  Seat4: openrouter:deepseek/deepseek-chat-v3.1
   Seat5: openrouter:qwen/qwen3-32b
   Seat6: stub:gto_approx              # solver anchor — no credentials needed
 small_blind: 10
@@ -29,9 +26,9 @@ hand_cap: 50
 session_count: 1
 master_seed: 2026
 budget_ceilings_usd:
-  openrouter:anthropic/claude-haiku-4-5: 1.20
+  openrouter:anthropic/claude-haiku-4.5: 1.20
   openrouter:openai/gpt-4o-mini: 0.50
-  openrouter:google/gemini-flash-1.5: 0.50
-  openrouter:deepseek/deepseek-chat-v3: 0.50
-  openrouter:qwen/qwen3-32b: 0.50
+  openrouter:google/gemini-2.5-flash: 0.80
+  openrouter:deepseek/deepseek-chat-v3.1: 0.50
+  openrouter:qwen/qwen3-32b: 0.30
   stub:gto_approx: 0.01

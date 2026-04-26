@@ -30,18 +30,23 @@ class OpenAIClientProtocol(Protocol):
     def chat(self) -> _ChatProto: ...
 
 
-def build_openai_action_schema(legal: tuple[ActionName, ...]) -> dict[str, Any]:
-    """JSON Schema for one decision, with ``action`` enum narrowed to ``legal``.
+def build_openai_action_schema(
+    legal: tuple[ActionName, ...],
+    *,
+    min_raise_to: int | None = None,  # noqa: ARG001 — kept for API symmetry; see note
+) -> dict[str, Any]:
+    """JSON Schema for one decision, narrowing ``action`` enum to ``legal``.
 
     Nullable fields use ``anyOf`` (not the ``type: [..., "null"]`` shorthand)
     because Anthropic-via-OpenRouter rejects the latter when paired with
     ``enum``.  All providers accept ``anyOf``.
 
-    Narrowing the enum per-call lets the provider reject illegal action names
-    at the protocol layer, eliminating the most common ``ValidatorRejection``
-    class entirely.  Amount bounds are still enforced by ``TDAValidator`` at
-    apply time — JSON Schema can't express min_raise without threading
-    table state through ``DecisionContext``.
+    ``min_raise_to`` is accepted for symmetry with the prompt path but not
+    expressed as a JSON-Schema ``minimum`` — Anthropic-via-OpenRouter
+    rejects ``minimum`` on integer types ("property 'minimum' is not
+    supported"), and we can't tell at request time whether OpenRouter
+    will route to Anthropic.  Sub-min raises are caught post-hoc by
+    ``TDAValidator`` instead.
     """
     return {
         "name": "agent_output",
@@ -96,7 +101,9 @@ class OpenAIAgent(BaseAdapter):
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": build_openai_action_schema(ctx.legal),
+                "json_schema": build_openai_action_schema(
+                    ctx.legal, min_raise_to=ctx.min_raise_to
+                ),
             },
             "max_tokens": 1024,
         }

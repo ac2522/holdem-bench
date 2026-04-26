@@ -14,6 +14,7 @@ from holdembench.agents.prompt import SessionContext, TournamentContext
 _EXPECTED_PROMPT_TOKENS = 420
 _EXPECTED_OUTPUT_TOKENS = 12
 _EXPECTED_CACHED_TOKENS = 380
+_TEST_MIN_RAISE_TO = 200
 
 
 @dataclass
@@ -111,6 +112,36 @@ async def test_google_response_schema_requested() -> None:
     cfg = spy.last_kwargs.get("config") or {}
     assert cfg.get("response_mime_type") == "application/json"
     assert "response_schema" in cfg
+
+
+@pytest.mark.asyncio
+async def test_google_amount_has_no_minimum_constraint() -> None:
+    """Schema must NOT carry `minimum` on amount — kept consistent with the
+    OpenAI helper for portability.  Sub-min raises are caught post-hoc by
+    TDAValidator.
+    """
+    spy = _Spy()
+    client = _FakeGoogle(['{"kind": "action", "action": "raise", "amount": 200}'], spy)
+    agent = GoogleAgent(model_id="google:gemini-3-flash-preview", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    ctx = DecisionContext(
+        seat="Seat1",
+        hand_id="s1h001",
+        street="preflop",
+        legal=("fold", "call", "raise"),
+        stacks={"Seat1": 1000},
+        board=(),
+        hole=("As", "Kd"),
+        budget_remaining=400,
+        is_probe_reply=False,
+        deadline_s=60.0,
+        min_raise_to=_TEST_MIN_RAISE_TO,
+    )
+    await agent.decide(ctx)
+    assert spy.last_kwargs is not None
+    schema = spy.last_kwargs["config"]["response_schema"]
+    assert "minimum" not in schema["properties"]["amount"]
+    assert "maximum" not in schema["properties"]["amount"]
 
 
 @pytest.mark.asyncio

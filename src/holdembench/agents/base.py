@@ -49,6 +49,12 @@ class DecisionContext:
     is_probe_reply: bool
     deadline_s: float
     chat_log: tuple[str, ...] = field(default_factory=tuple)
+    # Minimum legal raise-to amount for this decision, or None when raising
+    # is not in `legal`.  Adapters that build a structured-output schema
+    # use this to enforce `amount >= min_raise_to` at the protocol layer,
+    # so the LLM cannot return a sub-min raise that would be rejected by
+    # TDAValidator at apply time.
+    min_raise_to: int | None = None
 
 
 class Agent(Protocol):

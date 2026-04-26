@@ -19,7 +19,11 @@ class GoogleClientProtocol(Protocol):
     async def generate_content(self, **kwargs: Any) -> Any: ...
 
 
-def build_genai_action_schema(legal: tuple[ActionName, ...]) -> dict[str, Any]:
+def build_genai_action_schema(
+    legal: tuple[ActionName, ...],
+    *,
+    min_raise_to: int | None = None,  # noqa: ARG001 — kept for API symmetry; see note
+) -> dict[str, Any]:
     """Gemini schema for one decision, ``action`` enum narrowed to ``legal``.
 
     Mirrors :func:`holdembench.agents.openai.build_openai_action_schema` but
@@ -27,6 +31,11 @@ def build_genai_action_schema(legal: tuple[ActionName, ...]) -> dict[str, Any]:
     not accept ``anyOf`` with type-null at the leaf level).  Every field is
     in ``required`` — without this Gemini will happily return
     ``{"kind": "action"}`` missing ``action``, forcing a retry.
+
+    ``min_raise_to`` is accepted for symmetry with the OpenAI helper but
+    not expressed as a schema ``minimum``.  Anthropic-via-OpenRouter
+    rejects ``minimum`` on integers and we want one schema shape across
+    providers; sub-min raises are still caught post-hoc by TDAValidator.
     """
     return {
         "type": "object",
@@ -78,7 +87,9 @@ class GoogleAgent(BaseAdapter):
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
-                "response_schema": build_genai_action_schema(ctx.legal),
+                "response_schema": build_genai_action_schema(
+                    ctx.legal, min_raise_to=ctx.min_raise_to
+                ),
                 "max_output_tokens": 1024,
             },
         )

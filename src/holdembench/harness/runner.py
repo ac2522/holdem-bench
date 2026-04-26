@@ -539,6 +539,7 @@ async def _run_hand(
             budget_remaining=chat.budget_remaining(seat_name),
             is_probe_reply=False,
             deadline_s=_ACTION_TIMEOUT_S,
+            min_raise_to=table.min_raise_to() if "raise" in legal else None,
         )
         raw = await agents_by_seat[seat_name].decide(ctx)
         validated = await _validate_with_retry(

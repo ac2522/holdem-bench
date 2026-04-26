@@ -14,6 +14,7 @@ from holdembench.agents.prompt import SessionContext, TournamentContext
 _EXPECTED_PROMPT_TOKENS = 420
 _EXPECTED_COMPLETION_TOKENS = 15
 _EXPECTED_CACHED_TOKENS = 380
+_TEST_MIN_RAISE_TO = 120
 
 
 @dataclass
@@ -135,6 +136,39 @@ async def test_openai_reasoning_effort_forwarded() -> None:
     await agent.decide(_ctx())
     assert spy.last_kwargs is not None
     assert spy.last_kwargs.get("reasoning_effort") == "medium"
+
+
+@pytest.mark.asyncio
+async def test_openai_amount_has_no_minimum_constraint() -> None:
+    """Schema must NOT carry `minimum` on amount — Anthropic-via-OpenRouter
+    rejects `minimum` on integer types.  Sub-min raises are caught post-hoc
+    by TDAValidator instead.
+    """
+    spy = _Spy()
+    client = _FakeOpenAI(['{"kind": "action", "action": "raise", "amount": 100}'], spy)
+    agent = OpenAIAgent(model_id="openai:gpt-5-mini", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    ctx = DecisionContext(
+        seat="Seat1",
+        hand_id="s1h001",
+        street="preflop",
+        legal=("fold", "call", "raise"),
+        stacks={"Seat1": 1000},
+        board=(),
+        hole=("As", "Kd"),
+        budget_remaining=400,
+        is_probe_reply=False,
+        deadline_s=60.0,
+        min_raise_to=_TEST_MIN_RAISE_TO,
+    )
+    await agent.decide(ctx)
+    assert spy.last_kwargs is not None
+    schema = spy.last_kwargs["response_format"]["json_schema"]["schema"]
+    int_branch = next(
+        b for b in schema["properties"]["amount"]["anyOf"] if b.get("type") == "integer"
+    )
+    assert "minimum" not in int_branch
+    assert "maximum" not in int_branch
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,39 @@
+# Phase 1.5 smoke — all seats via OpenRouter (single API key needed).
+#
+# Use this when you only have an OpenRouter key:
+#
+#   ~/.holdembench/credentials.toml:
+#     [openrouter]
+#     api_key  = "sk-or-..."
+#     base_url = "https://openrouter.ai/api/v1"
+#
+# Run:
+#   uv run holdembench run --config evals/smoke-openrouter-only.yaml --seed 2026 --real-time
+#
+# Tradeoff vs smoke-cheap-tier.yaml: native adapter paths (Anthropic
+# cache_control, Google schema validation) are not exercised; everything
+# goes through the OpenAI-compat OpenRouter adapter.  Pipeline end-to-end
+# correctness is fully validated.
+
+tournament_id: smoke-openrouter-2026-04-23
+seats:
+  Seat1: openrouter:anthropic/claude-haiku-4-5
+  Seat2: openrouter:openai/gpt-4o-mini
+  Seat3: openrouter:google/gemini-flash-1.5
+  Seat4: openrouter:deepseek/deepseek-chat-v3
+  Seat5: openrouter:qwen/qwen3-32b
+  Seat6: stub:gto_approx              # solver anchor — no credentials needed
+small_blind: 10
+big_blind: 20
+ante: 0
+starting_stack: 1000
+hand_cap: 50
+session_count: 1
+master_seed: 2026
+budget_ceilings_usd:
+  openrouter:anthropic/claude-haiku-4-5: 1.20
+  openrouter:openai/gpt-4o-mini: 0.50
+  openrouter:google/gemini-flash-1.5: 0.50
+  openrouter:deepseek/deepseek-chat-v3: 0.50
+  openrouter:qwen/qwen3-32b: 0.50
+  stub:gto_approx: 0.01

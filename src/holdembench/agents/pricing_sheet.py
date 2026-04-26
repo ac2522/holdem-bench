@@ -75,6 +75,21 @@ PRICING_SHEET: dict[str, Pricing] = {
         input_per_mtok=0.27,
         output_per_mtok=0.60,
     ),
+    # OpenRouter-routed equivalents of native-adapter models.
+    # Use these when running smoke with a single OpenRouter key.
+    # Prices approximate native rates + ~5% OR markup; cache not surfaced.
+    "openrouter:anthropic/claude-haiku-4-5": Pricing(
+        input_per_mtok=1.05,
+        output_per_mtok=5.25,
+    ),
+    "openrouter:openai/gpt-4o-mini": Pricing(
+        input_per_mtok=0.165,
+        output_per_mtok=0.675,
+    ),
+    "openrouter:google/gemini-flash-1.5": Pricing(
+        input_per_mtok=0.08,
+        output_per_mtok=0.32,
+    ),
 }
 
 

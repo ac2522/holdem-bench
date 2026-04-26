@@ -1,20 +1,36 @@
-"""Credential loader for Phase 1+ runs.
+"""Provider credentials, sourced from environment variables.
 
-Reads ``~/.holdembench/credentials.toml`` by default.  File is never committed;
-``.gitignore`` covers ``credentials*`` and ``.holdembench/``.
+We let each provider SDK read its own canonical env var
+(``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``GOOGLE_API_KEY``).  For
+OpenRouter / xAI / Moonshot — which don't have a single official SDK — we
+follow the convention ``<PROVIDER>_API_KEY`` and ``<PROVIDER>_BASE_URL``.
+
+A ``.env`` file in the project root is loaded automatically (via
+``python-dotenv``) so contributors don't have to ``export`` keys in their
+shell every session.  ``.env`` is gitignored.
 """
 
 from __future__ import annotations
 
 import os
-import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+from dotenv import load_dotenv
+
+_PROVIDERS: dict[str, tuple[str, str | None, str | None]] = {
+    # provider     -> (api_key_env,        base_url_env,           default_base_url)
+    "anthropic":     ("ANTHROPIC_API_KEY",  None,                   None),
+    "openai":        ("OPENAI_API_KEY",     "OPENAI_BASE_URL",      None),
+    "google":        ("GOOGLE_API_KEY",     None,                   None),
+    "xai":           ("XAI_API_KEY",        "XAI_BASE_URL",         "https://api.x.ai/v1"),
+    "moonshot":      ("MOONSHOT_API_KEY",   "MOONSHOT_BASE_URL",    "https://api.moonshot.ai/v1"),
+    "openrouter":    ("OPENROUTER_API_KEY", "OPENROUTER_BASE_URL",  "https://openrouter.ai/api/v1"),
+}
 
 
-class CredentialsFileMissing(FileNotFoundError):
-    """Raised when the credentials file is absent at the expected path."""
+class MissingCredentialError(RuntimeError):
+    """Raised when a required provider env var is unset/empty."""
 
 
 @dataclass(frozen=True)
@@ -23,50 +39,57 @@ class ProviderCredentials:
     base_url: str | None = None
 
 
-def _empty_provider_map() -> dict[str, ProviderCredentials]:
-    return {}
+def load_dotenv_from_repo(repo_root: Path | None = None) -> None:
+    """Load ``.env`` from the repo root, if present.
+
+    Idempotent — safe to call multiple times.  Existing env vars take
+    precedence over file values (``override=False``).
+    """
+    if repo_root is None:
+        repo_root = _find_repo_root(Path.cwd())
+    env_path = repo_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
 
 
-@dataclass(frozen=True)
-class Credentials:
-    _by_provider: dict[str, ProviderCredentials] = field(default_factory=_empty_provider_map)
-
-    def get(self, provider: str) -> ProviderCredentials:
-        try:
-            return self._by_provider[provider]
-        except KeyError as e:
-            raise KeyError(
-                f"no credentials for provider {provider!r}; "
-                f"add a [{provider}] section to credentials.toml"
-            ) from e
-
-    def has(self, provider: str) -> bool:
-        return provider in self._by_provider
-
-    def providers(self) -> tuple[str, ...]:
-        return tuple(sorted(self._by_provider))
+def _find_repo_root(start: Path) -> Path:
+    for d in (start, *start.parents):
+        if (d / "pyproject.toml").exists() or (d / ".git").exists():
+            return d
+    return start
 
 
-def default_credentials_path() -> Path:
-    home = os.environ.get("HOME")
-    base = Path(home) if home else Path.home()
-    return base / ".holdembench" / "credentials.toml"
+def get_provider_credentials(provider: str) -> ProviderCredentials:
+    """Return the api_key (+ optional base_url) for ``provider``.
+
+    Raises :class:`MissingCredentialError` if the api-key env var is unset
+    or empty.  ``base_url`` falls back to the provider's documented default
+    when the override env var is unset.
+    """
+    if provider not in _PROVIDERS:
+        raise KeyError(f"unknown provider {provider!r}")
+    key_env, base_env, default_base = _PROVIDERS[provider]
+    api_key = os.environ.get(key_env, "").strip()
+    if not api_key:
+        raise MissingCredentialError(
+            f"missing {key_env}; set it in .env or export it in your shell"
+        )
+    base_url: str | None = None
+    if base_env is not None:
+        override = os.environ.get(base_env, "").strip()
+        base_url = override or default_base
+    elif default_base is not None:
+        base_url = default_base
+    return ProviderCredentials(api_key=api_key, base_url=base_url)
 
 
-def load_credentials(path: Path | None = None) -> Credentials:
-    resolved = path if path is not None else default_credentials_path()
-    if not resolved.exists():
-        raise CredentialsFileMissing(f"credentials file not found: {resolved}")
-    raw: dict[str, Any] = tomllib.loads(resolved.read_text())
-    by_provider: dict[str, ProviderCredentials] = {}
-    for provider, section in raw.items():
-        if not isinstance(section, dict):
-            continue
-        api_key_val = section.get("api_key")  # type: ignore[reportUnknownMemberType]
-        if not isinstance(api_key_val, str):
-            raise ValueError(f"provider {provider!r} missing required string `api_key`")
-        base_url_val = section.get("base_url")  # type: ignore[reportUnknownMemberType]
-        if base_url_val is not None and not isinstance(base_url_val, str):
-            raise ValueError(f"provider {provider!r} `base_url` must be a string if set")
-        by_provider[provider] = ProviderCredentials(api_key=api_key_val, base_url=base_url_val)
-    return Credentials(_by_provider=by_provider)
+def has_provider_credentials(provider: str) -> bool:
+    """True if the provider's api-key env var is set and non-empty."""
+    if provider not in _PROVIDERS:
+        return False
+    key_env, _, _ = _PROVIDERS[provider]
+    return bool(os.environ.get(key_env, "").strip())
+
+
+def known_providers() -> tuple[str, ...]:
+    return tuple(_PROVIDERS)

@@ -17,10 +17,10 @@ from holdembench.baselines import (
     TightPassiveAgent,
 )
 from holdembench.credentials import (
-    Credentials,
-    CredentialsFileMissing,
+    MissingCredentialError,
     ProviderCredentials,
-    load_credentials,
+    get_provider_credentials,
+    load_dotenv_from_repo,
 )
 from holdembench.harness.runner import TournamentConfig, run_tournament
 
@@ -47,20 +47,27 @@ def cli() -> None:
     help="Use deterministic time (default) or real wall-clock time",
 )
 @click.option(
-    "--credentials",
-    "credentials_path",
+    "--env-file",
+    "env_file",
     type=click.Path(),
     default=None,
-    help="Path to credentials.toml (default: ~/.holdembench/credentials.toml)",
+    help="Path to a .env file (default: <repo-root>/.env)",
 )
 def run(
     config_path: str,
     results_dir: str,
     seed: int | None,
     deterministic_time: bool,
-    credentials_path: str | None,
+    env_file: str | None,
 ) -> None:
     """Run a tournament from a YAML config file."""
+    if env_file is not None:
+        from dotenv import load_dotenv  # noqa: PLC0415
+
+        load_dotenv(Path(env_file), override=False)
+    else:
+        load_dotenv_from_repo()
+
     raw: dict[str, Any] = yaml.safe_load(Path(config_path).read_text())
     cfg = TournamentConfig(
         tournament_id=raw["tournament_id"],
@@ -76,8 +83,7 @@ def run(
         deterministic_time=deterministic_time,
         budget_ceilings_usd=raw.get("budget_ceilings_usd"),
     )
-    creds = _load_credentials_if_available(credentials_path)
-    agents = _build_agents(set(raw["seats"].values()), creds=creds)
+    agents = _build_agents(set(raw["seats"].values()))
     # Runner refreshes TournamentContext + SessionContext at each session
     # boundary (see runner._refresh_adapter_contexts) so session_id is
     # correctly threaded for multi-session tournaments.
@@ -93,14 +99,7 @@ def run(
         )
 
 
-def _load_credentials_if_available(path: str | None) -> Credentials | None:
-    try:
-        return load_credentials(Path(path)) if path else load_credentials()
-    except CredentialsFileMissing:
-        return None
-
-
-def _build_agents(model_ids: set[str], *, creds: Credentials | None) -> dict[str, Agent]:
+def _build_agents(model_ids: set[str]) -> dict[str, Agent]:
     built: dict[str, Agent] = {}
     for mid in model_ids:
         if mid.startswith("stub:"):
@@ -109,18 +108,16 @@ def _build_agents(model_ids: set[str], *, creds: Credentials | None) -> dict[str
                 raise click.ClickException(f"unknown stub agent: {mid}")
             built[mid] = cls()
             continue
-        built[mid] = _build_llm_agent(mid, creds=creds)
+        built[mid] = _build_llm_agent(mid)
     return built
 
 
-def _build_llm_agent(model_id: str, *, creds: Credentials | None) -> Agent:
+def _build_llm_agent(model_id: str) -> Agent:
     provider = model_id.split(":", 1)[0]
-    if creds is None or not creds.has(provider):
-        raise click.ClickException(
-            f"no credentials for provider {provider!r}; add a [{provider}] section to "
-            "~/.holdembench/credentials.toml (or pass --credentials)"
-        )
-    p = creds.get(provider)
+    try:
+        p = get_provider_credentials(provider)
+    except MissingCredentialError as e:
+        raise click.ClickException(str(e)) from e
     if provider == "anthropic":
         return _anthropic(model_id, p)
     if provider == "openai":
@@ -168,33 +165,25 @@ def _google(model_id: str, p: ProviderCredentials) -> Agent:
 def _xai(model_id: str, p: ProviderCredentials) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
-    from holdembench.agents.xai import DEFAULT_XAI_BASE_URL, XAIAgent  # noqa: PLC0415
+    from holdembench.agents.xai import XAIAgent  # noqa: PLC0415
 
-    client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url or DEFAULT_XAI_BASE_URL)
+    client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url)
     return XAIAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
 
 
 def _moonshot(model_id: str, p: ProviderCredentials) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
-    from holdembench.agents.moonshot import (  # noqa: PLC0415
-        DEFAULT_MOONSHOT_BASE_URL,
-        MoonshotAgent,
-    )
+    from holdembench.agents.moonshot import MoonshotAgent  # noqa: PLC0415
 
-    client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url or DEFAULT_MOONSHOT_BASE_URL)
+    client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url)
     return MoonshotAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
 
 
 def _openrouter(model_id: str, p: ProviderCredentials) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
-    from holdembench.agents.openrouter import (  # noqa: PLC0415
-        DEFAULT_OPENROUTER_BASE_URL,
-        OpenRouterAgent,
-    )
+    from holdembench.agents.openrouter import OpenRouterAgent  # noqa: PLC0415
 
-    client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url or DEFAULT_OPENROUTER_BASE_URL)
+    client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url)
     return OpenRouterAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
-
-

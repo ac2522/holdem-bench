@@ -38,5 +38,8 @@ results/**/events.jsonl.gz
 /credentials*
 *.credentials.toml
 *.credentials.json
+.env
+.env.*
+!.env.example
 .holdembench/
 results/smoke-*

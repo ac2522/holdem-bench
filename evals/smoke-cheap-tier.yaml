@@ -1,8 +1,8 @@
 # Phase 1.5 smoke config — ~$3 target, 50 hands, 6 seats.
 #
 # All model_ids must match an entry in src/holdembench/agents/pricing_sheet.py.
-# Requires ~/.holdembench/credentials.toml with sections for anthropic, openai,
-# google, openrouter.
+# Requires .env (or shell-exported) values for: ANTHROPIC_API_KEY,
+# OPENAI_API_KEY, GOOGLE_API_KEY, OPENROUTER_API_KEY.
 #
 # Run:
 #   uv run holdembench run --config evals/smoke-cheap-tier.yaml --seed 2026 --real-time

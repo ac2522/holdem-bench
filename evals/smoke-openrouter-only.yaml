@@ -1,11 +1,9 @@
 # Phase 1.5 smoke — all seats via OpenRouter (single API key needed).
 #
-# Use this when you only have an OpenRouter key:
+# Use this when you only have an OpenRouter key.  Set in .env (gitignored)
+# at the repo root, or export it in your shell:
 #
-#   ~/.holdembench/credentials.toml:
-#     [openrouter]
-#     api_key  = "sk-or-..."
-#     base_url = "https://openrouter.ai/api/v1"
+#   OPENROUTER_API_KEY=sk-or-...
 #
 # Run:
 #   uv run holdembench run --config evals/smoke-openrouter-only.yaml --seed 2026 --real-time

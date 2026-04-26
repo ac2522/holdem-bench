@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from holdembench.agents.base import DecisionContext
 from holdembench.agents.base_adapter import BaseAdapter, ProviderCall, Usage
+from holdembench.types import ActionName
 
 
 class _CompletionsProto(Protocol):
@@ -29,30 +30,40 @@ class OpenAIClientProtocol(Protocol):
     def chat(self) -> _ChatProto: ...
 
 
-# JSON Schema mirroring AgentOutput.  Nullable fields use anyOf (not the
-# `type: [..., "null"]` shorthand) because Anthropic-via-OpenRouter rejects
-# the latter when paired with `enum`.  All providers accept anyOf.
-_AGENT_OUTPUT_JSON_SCHEMA: dict[str, Any] = {
-    "name": "agent_output",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
-            "action": {
-                "anyOf": [
-                    {"type": "string", "enum": ["fold", "check", "call", "raise"]},
-                    {"type": "null"},
-                ],
+def build_openai_action_schema(legal: tuple[ActionName, ...]) -> dict[str, Any]:
+    """JSON Schema for one decision, with ``action`` enum narrowed to ``legal``.
+
+    Nullable fields use ``anyOf`` (not the ``type: [..., "null"]`` shorthand)
+    because Anthropic-via-OpenRouter rejects the latter when paired with
+    ``enum``.  All providers accept ``anyOf``.
+
+    Narrowing the enum per-call lets the provider reject illegal action names
+    at the protocol layer, eliminating the most common ``ValidatorRejection``
+    class entirely.  Amount bounds are still enforced by ``TDAValidator`` at
+    apply time — JSON Schema can't express min_raise without threading
+    table state through ``DecisionContext``.
+    """
+    return {
+        "name": "agent_output",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
+                "action": {
+                    "anyOf": [
+                        {"type": "string", "enum": list(legal)},
+                        {"type": "null"},
+                    ],
+                },
+                "amount": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "message": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "thinking": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             },
-            "amount": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-            "message": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "thinking": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "required": ["kind", "action", "amount", "message", "thinking"],
         },
-        "required": ["kind", "action", "amount", "message", "thinking"],
-    },
-}
+    }
 
 
 class OpenAIAgent(BaseAdapter):
@@ -85,7 +96,7 @@ class OpenAIAgent(BaseAdapter):
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": _AGENT_OUTPUT_JSON_SCHEMA,
+                "json_schema": build_openai_action_schema(ctx.legal),
             },
             "max_tokens": 1024,
         }

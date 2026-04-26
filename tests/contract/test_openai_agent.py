@@ -138,6 +138,34 @@ async def test_openai_reasoning_effort_forwarded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_response_format_enum_narrowed_to_legal() -> None:
+    """Schema's `action` enum must equal ctx.legal so providers reject illegal names."""
+    spy = _Spy()
+    client = _FakeOpenAI(['{"kind": "action", "action": "fold"}'], spy)
+    agent = OpenAIAgent(model_id="openai:gpt-5-mini", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    ctx = DecisionContext(
+        seat="Seat1",
+        hand_id="s1h001",
+        street="preflop",
+        legal=("fold", "check"),  # raise NOT legal here
+        stacks={"Seat1": 1000},
+        board=(),
+        hole=("As", "Kd"),
+        budget_remaining=400,
+        is_probe_reply=False,
+        deadline_s=60.0,
+    )
+    await agent.decide(ctx)
+    assert spy.last_kwargs is not None
+    schema = spy.last_kwargs["response_format"]["json_schema"]["schema"]
+    string_branch = next(
+        b for b in schema["properties"]["action"]["anyOf"] if b.get("type") == "string"
+    )
+    assert string_branch["enum"] == ["fold", "check"]
+
+
+@pytest.mark.asyncio
 async def test_openai_usage_separates_cache_from_input() -> None:
     spy = _Spy()
     client = _FakeOpenAI(['{"kind": "action", "action": "check"}'], spy)

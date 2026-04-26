@@ -12,30 +12,37 @@ from typing import Any, Protocol
 from holdembench.agents.base import DecisionContext
 from holdembench.agents.base_adapter import BaseAdapter, ProviderCall, Usage
 from holdembench.agents.output_schema import AgentOutputParseError
+from holdembench.types import ActionName
 
 
 class GoogleClientProtocol(Protocol):
     async def generate_content(self, **kwargs: Any) -> Any: ...
 
 
-_AGENT_OUTPUT_GENAI_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
-        "action": {
-            "type": "string",
-            "enum": ["fold", "check", "call", "raise"],
-            "nullable": True,
+def build_genai_action_schema(legal: tuple[ActionName, ...]) -> dict[str, Any]:
+    """Gemini schema for one decision, ``action`` enum narrowed to ``legal``.
+
+    Mirrors :func:`holdembench.agents.openai.build_openai_action_schema` but
+    uses Gemini's ``nullable: True`` shorthand (their schema validator does
+    not accept ``anyOf`` with type-null at the leaf level).  Every field is
+    in ``required`` — without this Gemini will happily return
+    ``{"kind": "action"}`` missing ``action``, forcing a retry.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
+            "action": {
+                "type": "string",
+                "enum": list(legal),
+                "nullable": True,
+            },
+            "amount": {"type": "integer", "nullable": True},
+            "message": {"type": "string", "nullable": True},
+            "thinking": {"type": "string", "nullable": True},
         },
-        "amount": {"type": "integer", "nullable": True},
-        "message": {"type": "string", "nullable": True},
-        "thinking": {"type": "string", "nullable": True},
-    },
-    # Mirror the OpenAI schema: every field is required (nullable allowed).
-    # Without this Gemini will happily return {"kind": "action"} missing
-    # "action", forcing a retry when the adapter re-validates.
-    "required": ["kind", "action", "amount", "message", "thinking"],
-}
+        "required": ["kind", "action", "amount", "message", "thinking"],
+    }
 
 
 class GoogleAgent(BaseAdapter):
@@ -71,7 +78,7 @@ class GoogleAgent(BaseAdapter):
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
-                "response_schema": _AGENT_OUTPUT_GENAI_SCHEMA,
+                "response_schema": build_genai_action_schema(ctx.legal),
                 "max_output_tokens": 1024,
             },
         )

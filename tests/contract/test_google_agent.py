@@ -114,6 +114,32 @@ async def test_google_response_schema_requested() -> None:
 
 
 @pytest.mark.asyncio
+async def test_google_response_schema_enum_narrowed_to_legal() -> None:
+    """Schema's `action` enum must equal ctx.legal (Gemini-shaped schema)."""
+    spy = _Spy()
+    client = _FakeGoogle(['{"kind": "action", "action": "fold"}'], spy)
+    agent = GoogleAgent(model_id="google:gemini-3-flash-preview", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    ctx = DecisionContext(
+        seat="Seat1",
+        hand_id="s1h001",
+        street="preflop",
+        legal=("fold", "call"),  # raise NOT legal here
+        stacks={"Seat1": 1000},
+        board=(),
+        hole=("As", "Kd"),
+        budget_remaining=400,
+        is_probe_reply=False,
+        deadline_s=60.0,
+    )
+    await agent.decide(ctx)
+    assert spy.last_kwargs is not None
+    cfg = spy.last_kwargs["config"]
+    schema = cfg["response_schema"]
+    assert schema["properties"]["action"]["enum"] == ["fold", "call"]
+
+
+@pytest.mark.asyncio
 async def test_google_usage_reports_cached_separately() -> None:
     spy = _Spy()
     client = _FakeGoogle(['{"kind": "action", "action": "check"}'], spy)

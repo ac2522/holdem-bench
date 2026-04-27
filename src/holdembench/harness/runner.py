@@ -89,6 +89,11 @@ class TournamentConfig:
     # Per-model USD ceilings (spec §8.5).  Breach of 2x ceiling triggers
     # BudgetCircuitBreak + AutoFold for the seat's remaining hands.
     budget_ceilings_usd: dict[str, float] | None = None
+    # Reasoning effort to request from thinking-capable models.  One of
+    # "low" / "medium" / "high" or None (no reasoning).  Forwarded to the
+    # OpenAI-compat adapters as both ``reasoning_effort`` (native OpenAI
+    # o-series) and ``extra_body.reasoning.effort`` (OpenRouter unified).
+    reasoning_effort: str | None = None
 
     def __post_init__(self) -> None:
         if not self.seats:
@@ -190,6 +195,22 @@ def _legal_actions(table: Table) -> list[ActionName]:
 
 _POKERKIT_NO_REASON_TO_FOLD = "no reason for this player to fold"
 _POKERKIT_ALREADY_COVERED = "already covered by a previous bet/raise"
+
+
+def _format_action_log_line(
+    hand_id: str, street: str, seat: str, raw: RawDecision
+) -> str:
+    """One short line per action for the running session log.
+
+    Format: ``"<hand_id> <street> <seat> <action><amount?>"``.  Probe /
+    probe_reply rows omit action/amount.  Compact on purpose — this log is
+    rendered into every prompt so token cost matters.
+    """
+    if raw.kind != "action":
+        return f"{hand_id} {street} {seat} {raw.kind}"
+    if raw.action == "raise" and raw.amount is not None:
+        return f"{hand_id} {street} {seat} raise {raw.amount}"
+    return f"{hand_id} {street} {seat} {raw.action}"
 
 
 def _apply_raw_to_table(table: Table, idx: int, raw: RawDecision) -> None:
@@ -462,6 +483,7 @@ async def _run_hand(
     per_model_stats: dict[str, dict[str, float]],
     session_id: int,
     hand_num: int,
+    action_log: list[str],
 ) -> float:
     """Run one hand and return the hand cost (USD).  Mutates *running_stacks* in-place."""
     hand_id = f"s{session_id}h{hand_num:03d}"
@@ -518,11 +540,13 @@ async def _run_hand(
             chat.mark_folded(seat_name)
             continue
         legal = _legal_actions(table)
+        street = table.current_street()
+        board = table.board()
         log.emit(
             ActionRequest(
                 hand_id=hand_id,
                 to_seat=seat_name,
-                street="preflop",  # Phase 0: placeholder — street tracking in Phase 1
+                street=street,
                 legal=legal,
                 timeout_s=_ACTION_TIMEOUT_S,
                 budget_remaining=chat.budget_remaining(seat_name),
@@ -531,15 +555,17 @@ async def _run_hand(
         ctx = DecisionContext(
             seat=seat_name,
             hand_id=hand_id,
-            street="preflop",  # Phase 0: placeholder — street tracking in Phase 1
+            street=street,
             legal=tuple(legal),
             stacks=dict(running_stacks),
-            board=(),
+            board=board,
             hole=tuple(deck[idx * 2 : idx * 2 + 2]),
             budget_remaining=chat.budget_remaining(seat_name),
             is_probe_reply=False,
             deadline_s=_ACTION_TIMEOUT_S,
             min_raise_to=table.min_raise_to() if "raise" in legal else None,
+            chat_log=chat.messages_this_hand(),
+            canonical_action_log="\n".join(action_log),
         )
         raw = await agents_by_seat[seat_name].decide(ctx)
         validated = await _validate_with_retry(
@@ -569,6 +595,7 @@ async def _run_hand(
         )
         hand_cost += cost
         _apply_raw_to_table(table, idx, raw)
+        action_log.append(_format_action_log_line(hand_id, street, seat_name, raw))
 
         # Mark folded seats so they cannot chat for the rest of this hand
         if raw.action == "fold":
@@ -654,6 +681,9 @@ async def _run_session(
     chat = ChatProtocol(seats=tuple(seat_list), budget_per_orbit=400, per_action_cap=80)
     session_cost = 0.0
     hands_played = 0
+    # Running log accumulated across hands in this session; rendered into
+    # the per-decision prompt so the LLM can plan around opponents' history.
+    action_log: list[str] = []
     for hand_num in range(1, cfg.hand_cap + 1):
         # Pokerkit refuses to deal a hand with any non-positive starting stack.
         # When a seat busts we end the session early — chip-EV semantics are
@@ -675,6 +705,7 @@ async def _run_session(
             per_model_stats=per_model_stats,
             session_id=session_id,
             hand_num=hand_num,
+            action_log=action_log,
         )
         hands_played += 1
     log.emit(

@@ -96,7 +96,10 @@ def render_prompt(
         seat=tournament.seat,
         orbit_bb=session.orbit_budget_tokens,
     )
-    body = session.canonical_action_log if session.canonical_action_log else "(no actions yet)"
+    # Prefer the per-decision log (kept fresh by the runner); fall back to
+    # the per-session legacy slot for callers that haven't been migrated.
+    log_body = decision.canonical_action_log or session.canonical_action_log
+    body = log_body if log_body else "(no actions yet)"
     user_session_log = _USER_SESSION_LOG_HEADER + body
     user_volatile = _render_volatile(decision)
     volatile_tokens = count_tokens(user_volatile)

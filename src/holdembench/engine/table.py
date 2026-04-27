@@ -21,6 +21,9 @@ from typing import cast
 from pokerkit import Automation, NoLimitTexasHoldem, State
 
 from holdembench.engine.config import TableConfig
+from holdembench.types import Street
+
+_STREETS: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
 
 # Automation is a StrEnum; pyright infers the tuple as tuple[str, ...] without
 # the explicit cast.  The cast is safe — all members are genuine Automation values.
@@ -115,6 +118,23 @@ class Table:
         already all-in covered, so no further chips can be put at risk.
         """
         return self._state.min_completion_betting_or_raising_to_amount is not None
+
+    def current_street(self) -> Street:
+        """Return the current street label (preflop/flop/turn/river).
+
+        Pokerkit's ``street_index`` is 0=preflop, 1=flop, 2=turn, 3=river;
+        we clamp at "river" if pokerkit somehow advances further.
+        """
+        idx = int(self._state.street_index or 0)
+        return _STREETS[min(idx, len(_STREETS) - 1)]
+
+    def board(self) -> tuple[str, ...]:
+        """Return community cards dealt so far, as compact card strings (e.g. "As")."""
+        cards: list[str] = []
+        for row in self._state.board_cards:
+            for card in row:
+                cards.append(repr(card))
+        return tuple(cards)
 
     def apply_raise(self, seat: int, to: int) -> None:
         if self._state.actor_index != seat:

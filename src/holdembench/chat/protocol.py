@@ -42,10 +42,12 @@ class ChatProtocol:
     per_action_cap: int = 80
     _state: dict[str, _SeatState] = field(init=False)
     _in_hand: set[str] = field(init=False)
+    _hand_messages: list[tuple[str, ChatKind, str]] = field(init=False)
 
     def __post_init__(self) -> None:
         self._state = {}
         self._in_hand = set()
+        self._hand_messages = []
         self.start_orbit()
 
     def start_orbit(self) -> None:
@@ -57,6 +59,17 @@ class ChatProtocol:
             st.folded_this_hand = False
             st.last_was_probe = False
         self._in_hand = set(in_hand)
+        self._hand_messages = []
+
+    def messages_this_hand(self) -> tuple[str, ...]:
+        """Return all chat messages emitted in the current hand.
+
+        Format: ``"SeatX (kind): <message>"``, suitable for direct insertion
+        into the per-decision prompt.  Includes self — every seat seeing
+        the prompt was either present at the table or the message belongs
+        to them, so privacy is unchanged.
+        """
+        return tuple(f"{seat} ({kind}): {msg}" for seat, kind, msg in self._hand_messages)
 
     def mark_folded(self, seat: str) -> None:
         self._state[seat].folded_this_hand = True
@@ -103,4 +116,5 @@ class ChatProtocol:
         else:
             st.last_was_probe = False
 
+        self._hand_messages.append((seat, kind, message))
         return tokens

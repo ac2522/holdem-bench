@@ -87,6 +87,14 @@ PRICING_SHEET: dict[str, Pricing] = {
         input_per_mtok=0.30,
         output_per_mtok=2.50,
     ),
+    "openrouter:x-ai/grok-3-mini": Pricing(
+        input_per_mtok=0.30,
+        output_per_mtok=0.50,
+    ),
+    "openrouter:meta-llama/llama-3.1-8b-instruct": Pricing(
+        input_per_mtok=0.02,
+        output_per_mtok=0.05,
+    ),
 }
 
 

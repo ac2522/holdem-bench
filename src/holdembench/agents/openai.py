@@ -108,7 +108,16 @@ class OpenAIAgent(BaseAdapter):
             "max_tokens": 1024,
         }
         if self._reasoning_effort:
+            # OpenRouter accepts a unified `reasoning` block in extra_body
+            # that propagates to the underlying provider (Anthropic extended
+            # thinking, Gemini thinking-mode, DeepSeek reasoner, Qwen3
+            # thinking).  Native OpenAI o-series accepts top-level
+            # `reasoning_effort`; we set both so the same adapter works
+            # whether the SDK is talking to OpenAI directly or to OR.
             kwargs["reasoning_effort"] = self._reasoning_effort
+            kwargs["extra_body"] = {
+                "reasoning": {"effort": self._reasoning_effort},
+            }
         client: OpenAIClientProtocol = self._client  # type: ignore[assignment]
         resp = await client.chat.completions.create(**kwargs)
         text = resp.choices[0].message.content or ""

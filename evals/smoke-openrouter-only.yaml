@@ -1,34 +1,37 @@
-# Phase 1.5 smoke — all seats via OpenRouter (single API key needed).
+# Phase 1.5 smoke — diverse cheap lineup, all via OpenRouter.
 #
-# Use this when you only have an OpenRouter key.  Set in .env (gitignored)
-# at the repo root, or export it in your shell:
+# 6 LLMs + 1 stub.  All thinking-capable models (haiku-4.5, gemini-2.5-flash,
+# deepseek-v3.1, qwen3-32b, grok-3-mini) get reasoning_effort=medium.
+# llama-3.1-8b is included as a cheap non-thinking baseline.
 #
+# Set in .env (gitignored) at the repo root:
 #   OPENROUTER_API_KEY=sk-or-...
 #
 # Run:
 #   uv run holdembench run --config evals/smoke-openrouter-only.yaml --seed 2026 --real-time
-#
-# Model IDs verified against /api/v1/models on 2026-04-26.
 
-tournament_id: smoke-openrouter-2026-04-26
+tournament_id: smoke-diverse-2026-04-27
 seats:
-  Seat1: openrouter:anthropic/claude-haiku-4.5
-  Seat2: openrouter:openai/gpt-4o-mini
-  Seat3: openrouter:google/gemini-2.5-flash
-  Seat4: openrouter:deepseek/deepseek-chat-v3.1
-  Seat5: openrouter:qwen/qwen3-32b
-  Seat6: stub:gto_approx              # solver anchor — no credentials needed
+  Seat1: openrouter:anthropic/claude-haiku-4.5     # Anthropic
+  Seat2: openrouter:google/gemini-2.5-flash         # Google
+  Seat3: openrouter:deepseek/deepseek-chat-v3.1     # DeepSeek
+  Seat4: openrouter:qwen/qwen3-32b                  # Qwen
+  Seat5: openrouter:x-ai/grok-3-mini                # xAI
+  Seat6: openrouter:meta-llama/llama-3.1-8b-instruct  # Meta (no thinking)
+  Seat7: stub:gto_approx                            # solver anchor
 small_blind: 10
 big_blind: 20
 ante: 0
 starting_stack: 1000
-hand_cap: 50
+hand_cap: 30
 session_count: 1
 master_seed: 2026
+reasoning_effort: medium
 budget_ceilings_usd:
-  openrouter:anthropic/claude-haiku-4.5: 1.20
-  openrouter:openai/gpt-4o-mini: 0.50
-  openrouter:google/gemini-2.5-flash: 0.80
+  openrouter:anthropic/claude-haiku-4.5: 1.50
+  openrouter:google/gemini-2.5-flash: 1.00
   openrouter:deepseek/deepseek-chat-v3.1: 0.50
   openrouter:qwen/qwen3-32b: 0.30
+  openrouter:x-ai/grok-3-mini: 0.50
+  openrouter:meta-llama/llama-3.1-8b-instruct: 0.10
   stub:gto_approx: 0.01

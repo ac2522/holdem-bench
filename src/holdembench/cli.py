@@ -82,8 +82,12 @@ def run(
         results_dir=Path(results_dir),
         deterministic_time=deterministic_time,
         budget_ceilings_usd=raw.get("budget_ceilings_usd"),
+        reasoning_effort=raw.get("reasoning_effort"),
     )
-    agents = _build_agents(set(raw["seats"].values()))
+    agents = _build_agents(
+        set(raw["seats"].values()),
+        reasoning_effort=cfg.reasoning_effort,
+    )
     # Runner refreshes TournamentContext + SessionContext at each session
     # boundary (see runner._refresh_adapter_contexts) so session_id is
     # correctly threaded for multi-session tournaments.
@@ -99,7 +103,9 @@ def run(
         )
 
 
-def _build_agents(model_ids: set[str]) -> dict[str, Agent]:
+def _build_agents(
+    model_ids: set[str], *, reasoning_effort: str | None = None
+) -> dict[str, Agent]:
     built: dict[str, Agent] = {}
     for mid in model_ids:
         if mid.startswith("stub:"):
@@ -108,11 +114,13 @@ def _build_agents(model_ids: set[str]) -> dict[str, Agent]:
                 raise click.ClickException(f"unknown stub agent: {mid}")
             built[mid] = cls()
             continue
-        built[mid] = _build_llm_agent(mid)
+        built[mid] = _build_llm_agent(mid, reasoning_effort=reasoning_effort)
     return built
 
 
-def _build_llm_agent(model_id: str) -> Agent:
+def _build_llm_agent(
+    model_id: str, *, reasoning_effort: str | None = None
+) -> Agent:
     provider = model_id.split(":", 1)[0]
     try:
         p = get_provider_credentials(provider)
@@ -121,15 +129,15 @@ def _build_llm_agent(model_id: str) -> Agent:
     if provider == "anthropic":
         return _anthropic(model_id, p)
     if provider == "openai":
-        return _openai(model_id, p)
+        return _openai(model_id, p, reasoning_effort=reasoning_effort)
     if provider == "google":
         return _google(model_id, p)
     if provider == "xai":
-        return _xai(model_id, p)
+        return _xai(model_id, p, reasoning_effort=reasoning_effort)
     if provider == "moonshot":
-        return _moonshot(model_id, p)
+        return _moonshot(model_id, p, reasoning_effort=reasoning_effort)
     if provider == "openrouter":
-        return _openrouter(model_id, p)
+        return _openrouter(model_id, p, reasoning_effort=reasoning_effort)
     raise click.ClickException(f"unknown provider: {provider}")
 
 
@@ -142,7 +150,9 @@ def _anthropic(model_id: str, p: ProviderCredentials) -> Agent:
     return AnthropicAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
 
 
-def _openai(model_id: str, p: ProviderCredentials) -> Agent:
+def _openai(
+    model_id: str, p: ProviderCredentials, *, reasoning_effort: str | None = None
+) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
     from holdembench.agents.openai import OpenAIAgent  # noqa: PLC0415
@@ -150,7 +160,9 @@ def _openai(model_id: str, p: ProviderCredentials) -> Agent:
     client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url) if p.base_url else AsyncOpenAI(
         api_key=p.api_key
     )
-    return OpenAIAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
+    return OpenAIAgent(  # type: ignore[arg-type]
+        model_id=model_id, client=client, reasoning_effort=reasoning_effort
+    )
 
 
 def _google(model_id: str, p: ProviderCredentials) -> Agent:
@@ -162,28 +174,40 @@ def _google(model_id: str, p: ProviderCredentials) -> Agent:
     return GoogleAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
 
 
-def _xai(model_id: str, p: ProviderCredentials) -> Agent:
+def _xai(
+    model_id: str, p: ProviderCredentials, *, reasoning_effort: str | None = None
+) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
     from holdembench.agents.xai import XAIAgent  # noqa: PLC0415
 
     client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url)
-    return XAIAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
+    return XAIAgent(  # type: ignore[arg-type]
+        model_id=model_id, client=client, reasoning_effort=reasoning_effort
+    )
 
 
-def _moonshot(model_id: str, p: ProviderCredentials) -> Agent:
+def _moonshot(
+    model_id: str, p: ProviderCredentials, *, reasoning_effort: str | None = None
+) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
     from holdembench.agents.moonshot import MoonshotAgent  # noqa: PLC0415
 
     client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url)
-    return MoonshotAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
+    return MoonshotAgent(  # type: ignore[arg-type]
+        model_id=model_id, client=client, reasoning_effort=reasoning_effort
+    )
 
 
-def _openrouter(model_id: str, p: ProviderCredentials) -> Agent:
+def _openrouter(
+    model_id: str, p: ProviderCredentials, *, reasoning_effort: str | None = None
+) -> Agent:
     from openai import AsyncOpenAI  # noqa: PLC0415
 
     from holdembench.agents.openrouter import OpenRouterAgent  # noqa: PLC0415
 
     client = AsyncOpenAI(api_key=p.api_key, base_url=p.base_url)
-    return OpenRouterAgent(model_id=model_id, client=client)  # type: ignore[arg-type]
+    return OpenRouterAgent(  # type: ignore[arg-type]
+        model_id=model_id, client=client, reasoning_effort=reasoning_effort
+    )

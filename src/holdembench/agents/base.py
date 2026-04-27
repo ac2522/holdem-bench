@@ -55,6 +55,10 @@ class DecisionContext:
     # so the LLM cannot return a sub-min raise that would be rejected by
     # TDAValidator at apply time.
     min_raise_to: int | None = None
+    # Running canonical action log of every action emitted in this session
+    # so far (one short line per action).  Rendered into the per-decision
+    # prompt so the LLM can plan around opponents' history.
+    canonical_action_log: str = ""
 
 
 class Agent(Protocol):

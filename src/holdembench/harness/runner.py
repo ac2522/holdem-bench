@@ -69,6 +69,19 @@ _SEAT_KEY_RE = re.compile(r"^Seat\d+$")
 
 
 @dataclass(frozen=True)
+class BlindLevel:
+    """One step in a tournament-style blind schedule.
+
+    A match plays with the highest level whose ``start_hand`` is <= the
+    current 1-indexed hand number.  ``start_hand`` must be >= 1.
+    """
+
+    start_hand: int
+    small_blind: int
+    big_blind: int
+
+
+@dataclass(frozen=True)
 class TournamentConfig:
     """Immutable tournament configuration."""
 
@@ -79,7 +92,7 @@ class TournamentConfig:
     ante: int
     starting_stack: int
     hand_cap: int
-    session_count: int
+    session_count: int  # number of "matches" played; stacks reset between
     master_seed: int
     results_dir: Path
     schema_version: str = "1.0"
@@ -94,6 +107,11 @@ class TournamentConfig:
     # OpenAI-compat adapters as both ``reasoning_effort`` (native OpenAI
     # o-series) and ``extra_body.reasoning.effort`` (OpenRouter unified).
     reasoning_effort: str | None = None
+    # Tournament-style rising-blind schedule (optional).  When None, every
+    # hand uses ``small_blind`` / ``big_blind``.  When set, the runner
+    # picks the highest level whose ``start_hand`` <= hand_num for the
+    # current match.
+    blind_levels: tuple[BlindLevel, ...] | None = None
 
     def __post_init__(self) -> None:
         if not self.seats:
@@ -130,8 +148,11 @@ class TournamentResult:
     log_path: Path
     manifest_path: Path
     final_chip_totals: dict[str, int]
+    final_score: dict[str, int]
+    winner_seat: str
     per_model_cost: dict[str, dict[str, float]]
     total_cost_usd: float
+    per_match_finals: list[dict[str, int]]
 
 
 def _empty_stats() -> dict[str, float]:
@@ -196,6 +217,30 @@ def _legal_actions(table: Table) -> list[ActionName]:
 _POKERKIT_NO_REASON_TO_FOLD = "no reason for this player to fold"
 _POKERKIT_ALREADY_COVERED = "already covered by a previous bet/raise"
 
+# A poker hand requires at least two players willing to put chips at risk.
+_MIN_ACTIVE_SEATS = 2
+
+
+def _blinds_for_hand(cfg: TournamentConfig, hand_num: int) -> tuple[int, int]:
+    """Return ``(small_blind, big_blind)`` for a 1-indexed ``hand_num``.
+
+    Without ``cfg.blind_levels`` set, every hand uses the cfg defaults.
+    With levels set, the highest level whose ``start_hand`` <= ``hand_num``
+    wins.
+    """
+    if not cfg.blind_levels:
+        return cfg.small_blind, cfg.big_blind
+    chosen = (cfg.small_blind, cfg.big_blind)
+    for level in cfg.blind_levels:
+        if level.start_hand <= hand_num:
+            chosen = (level.small_blind, level.big_blind)
+    return chosen
+
+
+def _active_seats(seat_list: list[str], running_stacks: dict[str, int]) -> list[str]:
+    """Seats with strictly positive stacks, in original seat order."""
+    return [s for s in seat_list if running_stacks[s] > 0]
+
 
 def _format_action_log_line(
     hand_id: str, street: str, seat: str, raw: RawDecision
@@ -250,6 +295,7 @@ def _apply_raw_to_table(table: Table, idx: int, raw: RawDecision) -> None:
 def _compute_stack_deltas(
     table: Table,
     seat_list: list[str],
+    active: list[str],
     running: dict[str, int],
 ) -> dict[str, int]:
     """Compute per-seat chip delta for the hand just completed.
@@ -257,9 +303,15 @@ def _compute_stack_deltas(
     With ``CHIPS_PUSHING`` + ``CHIPS_PULLING`` automations active, pokerkit
     updates ``state.stacks`` immediately when the hand concludes, so we can
     read final chip totals directly.
+
+    ``active`` is the subset of ``seat_list`` that participated in the
+    table; busted seats stay at delta 0.
     """
     state = table._state  # noqa: SLF001 — intentional read-only introspection  # type: ignore[reportPrivateUsage]
-    return {s: int(state.stacks[i]) - running[s] for i, s in enumerate(seat_list)}
+    deltas: dict[str, int] = {s: 0 for s in seat_list}
+    for i, s in enumerate(active):
+        deltas[s] = int(state.stacks[i]) - running[s]
+    return deltas
 
 
 def _raw_to_dict(raw: RawDecision) -> dict[str, object]:
@@ -469,6 +521,50 @@ def _emit_action_response_and_update_stats(
     return cost
 
 
+def _setup_hand(
+    *,
+    cfg: TournamentConfig,
+    log: EventLog,
+    seat_list: list[str],
+    seat_count: int,
+    chat: ChatProtocol,
+    running_stacks: dict[str, int],
+    active: list[str],
+    hand_id: str,
+    hand_num: int,
+) -> tuple[Table, TDAValidator, list[str]]:
+    """Build the per-hand Table + emit HandStart.  Returns (table, validator, deck)."""
+    n_active = len(active)
+    sb, bb = _blinds_for_hand(cfg, hand_num)
+    table = Table(
+        TableConfig(
+            seat_count=n_active,
+            small_blind=sb,
+            big_blind=bb,
+            ante=cfg.ante,
+            starting_stacks=tuple(running_stacks[s] for s in active),
+        )
+    )
+    validator = TDAValidator(table)
+    if hand_num % seat_count == 1:
+        chat.start_orbit()
+    chat.start_hand(in_hand=set(active))
+    deck = shuffled_deck(seed=cfg.master_seed * 10_000 + hand_num)
+    cards_hash = hashlib.sha256(",".join(deck[: n_active * 2]).encode()).hexdigest()
+    log.emit(
+        HandStart(
+            hand_id=hand_id,
+            button_seat=(hand_num - 1) % n_active,
+            stacks=dict(running_stacks),
+            cards_hash=f"sha256:{cards_hash}",
+            chat_budgets_remaining={s: chat.budget_remaining(s) for s in seat_list},
+            small_blind=sb,
+            big_blind=bb,
+        )
+    )
+    return table, validator, deck
+
+
 async def _run_hand(
     *,
     cfg: TournamentConfig,
@@ -485,32 +581,24 @@ async def _run_hand(
     hand_num: int,
     action_log: list[str],
 ) -> float:
-    """Run one hand and return the hand cost (USD).  Mutates *running_stacks* in-place."""
+    """Run one hand and return the hand cost (USD).  Mutates *running_stacks* in-place.
+
+    Busted seats (stack <= 0) sit out — they're filtered before constructing
+    the pokerkit Table.  Their seat slot remains in ``running_stacks`` and
+    in event payloads (with stack=0), but they don't act and can't chat.
+    """
     hand_id = f"s{session_id}h{hand_num:03d}"
-    table_cfg = TableConfig(
+    active = _active_seats(seat_list, running_stacks)
+    table, validator, deck = _setup_hand(
+        cfg=cfg,
+        log=log,
+        seat_list=seat_list,
         seat_count=seat_count,
-        small_blind=cfg.small_blind,
-        big_blind=cfg.big_blind,
-        ante=cfg.ante,
-        starting_stacks=tuple(running_stacks[s] for s in seat_list),
-    )
-    table = Table(table_cfg)
-    validator = TDAValidator(table)
-
-    if hand_num % seat_count == 1:
-        chat.start_orbit()
-    chat.start_hand(in_hand=set(seat_list))
-
-    deck = shuffled_deck(seed=cfg.master_seed * 10_000 + hand_num)
-    cards_hash = hashlib.sha256(",".join(deck[: seat_count * 2]).encode()).hexdigest()
-    log.emit(
-        HandStart(
-            hand_id=hand_id,
-            button_seat=(hand_num - 1) % seat_count,
-            stacks=dict(running_stacks),
-            cards_hash=f"sha256:{cards_hash}",
-            chat_budgets_remaining={s: chat.budget_remaining(s) for s in seat_list},
-        )
+        chat=chat,
+        running_stacks=running_stacks,
+        active=active,
+        hand_id=hand_id,
+        hand_num=hand_num,
     )
 
     hand_wall_start = time.time()
@@ -520,7 +608,9 @@ async def _run_hand(
         idx = table.next_actor()
         if idx is None:
             break
-        seat_name = seat_list[idx]
+        # idx is the pokerkit table index in [0, n_active);
+        # map back to the original seat name via the active filter.
+        seat_name = active[idx]
         agent_obj_pre = agents_by_seat[seat_name]
         if _check_circuit_breaker(
             log=log,
@@ -602,7 +692,7 @@ async def _run_hand(
             chat.mark_folded(seat_name)
 
     elapsed = 0.0 if cfg.deterministic_time else time.time() - hand_wall_start
-    deltas = _compute_stack_deltas(table, seat_list, running_stacks)
+    deltas = _compute_stack_deltas(table, seat_list, active, running_stacks)
     for s, d in deltas.items():
         running_stacks[s] += d
     log.emit(
@@ -661,19 +751,33 @@ async def _run_session(
     per_model_stats: dict[str, dict[str, float]],
     session_id: int,
 ) -> float:
-    """Run one session and return the session cost (USD).  Mutates *running_stacks* in-place."""
+    """Run one session (one "match") and return the session cost (USD).
+
+    A match begins with every seat reset to ``cfg.starting_stack``.  Within
+    the match, busted seats sit out remaining hands (their stack stays at
+    0) — no rebuys.  The match plays exactly ``cfg.hand_cap`` hands unless
+    fewer than 2 seats remain active, in which case it ends early.
+
+    Mutates ``running_stacks`` in-place.
+    """
+    # Match reset: stacks back to starting_stack.  This is what makes
+    # session_count behave as match_count — each session is an
+    # independent game.
+    for seat in seat_list:
+        running_stacks[seat] = cfg.starting_stack
     _refresh_adapter_contexts(
         cfg=cfg,
         seat_list=seat_list,
         agents_by_seat=agents_by_seat,
         session_id=session_id,
     )
+    sb_init, bb_init = _blinds_for_hand(cfg, 1)
     log.emit(
         SessionStart(
             session_id=session_id,
             hand_cap=cfg.hand_cap,
-            small_blind=cfg.small_blind,
-            big_blind=cfg.big_blind,
+            small_blind=sb_init,
+            big_blind=bb_init,
             ante=cfg.ante,
             deal_pack_seed=cfg.master_seed * 1000 + session_id,
         )
@@ -685,12 +789,9 @@ async def _run_session(
     # the per-decision prompt so the LLM can plan around opponents' history.
     action_log: list[str] = []
     for hand_num in range(1, cfg.hand_cap + 1):
-        # Pokerkit refuses to deal a hand with any non-positive starting stack.
-        # When a seat busts we end the session early — chip-EV semantics are
-        # preserved (no auto-rebuy) and downstream scoring sees the true totals.
-        # Proper tournament elimination (re-seating, button rotation) is tracked
-        # as a Phase 1.1 follow-up (P1.1-C).
-        if any(running_stacks[s] <= 0 for s in seat_list):
+        # No rebuys: a player at 0 chips sits out, but the match continues
+        # for surviving seats.  Stop only when fewer than 2 seats are left.
+        if len(_active_seats(seat_list, running_stacks)) < _MIN_ACTIVE_SEATS:
             break
         session_cost += await _run_hand(
             cfg=cfg,
@@ -774,6 +875,10 @@ async def run_tournament(
         breached: set[str] = set()
         per_model_stats: dict[str, dict[str, float]] = {}
         total_cost = 0.0
+        # Final stacks at the end of each match.  Summed at tournament end
+        # to produce final_score (so a player who busts in match 1 but
+        # wins match 2 still gets credit for match-2 chips).
+        per_match_finals: list[dict[str, int]] = []
         for session_id in range(1, cfg.session_count + 1):
             total_cost += await _run_session(
                 cfg=cfg,
@@ -787,12 +892,18 @@ async def run_tournament(
                 per_model_stats=per_model_stats,
                 session_id=session_id,
             )
-        winner_seat = max(running_stacks, key=lambda s: running_stacks[s])
+            per_match_finals.append(dict(running_stacks))
+        final_score: dict[str, int] = {s: 0 for s in seat_list}
+        for stacks in per_match_finals:
+            for s, v in stacks.items():
+                final_score[s] += v
+        winner_seat = max(final_score, key=lambda s: final_score[s])
         wall_clock_s = 0.0 if cfg.deterministic_time else time.time() - wall_clock_start
         log.emit(
             TournamentEnd(
                 tournament_id=cfg.tournament_id,
                 final_chip_totals=dict(running_stacks),
+                final_score=final_score,
                 winner_seat=winner_seat,
                 winner_model=cfg.seats[winner_seat],
                 total_cost_usd=total_cost,
@@ -815,6 +926,9 @@ async def run_tournament(
         log_path=log_path,
         manifest_path=manifest_path,
         final_chip_totals=dict(running_stacks),
+        final_score=final_score,
+        winner_seat=winner_seat,
         per_model_cost=per_model_stats,
         total_cost_usd=total_cost,
+        per_match_finals=per_match_finals,
     )

@@ -22,7 +22,7 @@ from holdembench.credentials import (
     get_provider_credentials,
     load_dotenv_from_repo,
 )
-from holdembench.harness.runner import TournamentConfig, run_tournament
+from holdembench.harness.runner import BlindLevel, TournamentConfig, run_tournament
 
 _STUB_REGISTRY: dict[str, type[Agent]] = {
     "stub:random": RandomAgent,
@@ -69,6 +69,19 @@ def run(
         load_dotenv_from_repo()
 
     raw: dict[str, Any] = yaml.safe_load(Path(config_path).read_text())
+    blind_levels_raw = raw.get("blind_levels")
+    blind_levels: tuple[BlindLevel, ...] | None = (
+        tuple(
+            BlindLevel(
+                start_hand=lvl["start_hand"],
+                small_blind=lvl["small_blind"],
+                big_blind=lvl["big_blind"],
+            )
+            for lvl in blind_levels_raw
+        )
+        if blind_levels_raw
+        else None
+    )
     cfg = TournamentConfig(
         tournament_id=raw["tournament_id"],
         seats=raw["seats"],
@@ -83,6 +96,7 @@ def run(
         deterministic_time=deterministic_time,
         budget_ceilings_usd=raw.get("budget_ceilings_usd"),
         reasoning_effort=raw.get("reasoning_effort"),
+        blind_levels=blind_levels,
     )
     agents = _build_agents(
         set(raw["seats"].values()),
@@ -93,7 +107,13 @@ def run(
     # correctly threaded for multi-session tournaments.
     result = asyncio.run(run_tournament(cfg, agents))
     click.echo(f"Done — log: {result.log_path}")
-    click.echo(f"Final chip totals: {result.final_chip_totals}")
+    for i, stacks in enumerate(result.per_match_finals, start=1):
+        click.echo(f"Match {i} finals: {stacks}")
+    ranking = sorted(result.final_score.items(), key=lambda kv: -kv[1])
+    click.echo("Ranking by final_score (sum across matches):")
+    for rank, (seat, score) in enumerate(ranking, start=1):
+        marker = "  *" if seat == result.winner_seat else "   "
+        click.echo(f"{marker}{rank}. {seat} ({raw['seats'][seat]}): {score}")
     click.echo(f"Total cost: ${result.total_cost_usd:.4f}")
     for mid, stats in sorted(result.per_model_cost.items()):
         click.echo(

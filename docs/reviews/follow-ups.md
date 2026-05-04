@@ -67,8 +67,7 @@ tagged `phase-0-followup` when the repo is made public.
 ### P1.1-C — Busted seats trigger non-positive-stack ValueError; session ends early
 **File:** `src/holdembench/harness/runner.py` (`_run_session`)
 **Found in:** Phase 1.5 smoke (2026-04-26) — gpt-4o-mini busted on hand 3, the next hand's `Table` constructor failed pokerkit's "Non-positive starting stacks" guard.
-**Workaround applied:** `_run_session` now `break`s out of its hand loop once any seat hits ≤ 0, and `total_hands` reflects hands actually played.  This preserves chip-EV semantics (no auto-rebuy) but ends the session whenever a player busts.
-**Proper fix:** Decide whether HoldEmBench is a tournament (eliminate busted seats, re-deal with reduced seat_count) or a cash game (auto-rebuy to `starting_stack`).  Spec §X is silent.  For a tournament: implement seat-elimination + button rotation + chat-protocol seat-list rebalancing.
+**✅ Resolved 2026-05-04:** Adopted "match" semantics — `_run_session` now plays exactly `cfg.hand_cap` hands (or until fewer than 2 active seats remain).  Each hand filters seats with stack > 0 and creates the pokerkit Table sized to active count only.  Busted seats stay in the lineup with stack 0 (no rebuy) and skip every subsequent hand of the match.  Stacks reset between matches, and the tournament's `final_score` per seat is the sum of per-match final stacks.  Rising-stake `blind_levels` schedule supports tournament-style escalation within a match.
 
 ### P1.1-D — Stack deltas don't sum to zero on multi-way all-ins
 **File:** `src/holdembench/engine/table.py`, `src/holdembench/harness/runner.py`

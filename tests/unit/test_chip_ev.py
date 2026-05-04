@@ -55,6 +55,7 @@ def _minimal_log(tmp: Path) -> Path:
             TournamentEnd(
                 tournament_id="t",
                 final_chip_totals={"Seat1": 1050, "Seat2": 950},
+                final_score={"Seat1": 1050, "Seat2": 950},
                 winner_seat="Seat1",
                 winner_model="a",
                 total_cost_usd=0.0,

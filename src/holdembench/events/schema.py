@@ -70,6 +70,10 @@ class HandStart(_Base):
     stacks: dict[str, int]
     cards_hash: str
     chat_budgets_remaining: dict[str, int]
+    # Blinds in effect for this hand; equal to TournamentConfig.small_blind/
+    # big_blind by default but rise mid-match if blind_levels are configured.
+    small_blind: int = 0
+    big_blind: int = 0
 
 
 class Deal(_Base):
@@ -157,6 +161,10 @@ class TournamentEnd(_Base):
     type: Literal["tournament_end"] = "tournament_end"
     tournament_id: str
     final_chip_totals: dict[str, int]
+    # final_score per seat: sum of per-match final stacks (so a player who
+    # busted in match 1 but won match 2 still scores the match-2 chips).
+    # Same as ``final_chip_totals`` for single-match tournaments.
+    final_score: dict[str, int]
     winner_seat: str
     winner_model: str
     total_cost_usd: float

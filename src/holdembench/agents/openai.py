@@ -92,11 +92,36 @@ class OpenAIAgent(BaseAdapter):
         user = bundle.user_session_log + "\n\n" + bundle.user_volatile
         if retry_reason:
             user += f"\n\nRETRY: previous output failed validation: {retry_reason}"
+        # System messages use the content-array form with `cache_control:
+        # ephemeral` on the largest stable block so Anthropic-via-OpenRouter
+        # caches the system_tournament + system_session prefix (saves ~90%
+        # on input cost for repeat hands).  OpenAI/Gemini/DeepSeek/xAI
+        # silently ignore cache_control via OR per OpenRouter's docs.
+        # Plain-string content for the user message — it changes per call
+        # so caching it would never hit.
         kwargs: dict[str, Any] = {
             "model": self._sdk_model_name(),
             "messages": [
-                {"role": "system", "content": bundle.system_tournament},
-                {"role": "system", "content": bundle.system_session},
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": bundle.system_tournament,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                },
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": bundle.system_session,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                },
                 {"role": "user", "content": user},
             ],
             "response_format": {

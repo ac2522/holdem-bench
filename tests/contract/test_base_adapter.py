@@ -202,13 +202,18 @@ async def test_decide_resets_counters_between_calls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_thinking_captured_from_output() -> None:
+async def test_last_thinking_comes_from_provider_reasoning_text_not_json() -> None:
+    """`thinking` is no longer part of the JSON schema (it would bias the
+    benchmark).  Adapters now populate ``last_thinking`` from the
+    provider's reasoning text channel via ProviderCall.reasoning_text.
+    """
+    # Without provider reasoning, last_thinking is None (no JSON contamination).
     adapter = _FakeAdapter(
         model_id="test:model",
-        responses=['{"kind": "action", "action": "call", "thinking": "pondered"}'],
+        responses=['{"kind": "action", "action": "call"}'],
     )
     adapter.set_context(tournament=_tournament(), session=_session())
     await adapter.decide(_ctx())
-    assert adapter.last_thinking == "pondered"
+    assert adapter.last_thinking is None
 
 

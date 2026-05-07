@@ -47,10 +47,10 @@ def build_genai_action_schema(
                 "nullable": True,
             },
             "amount": {"type": "integer", "nullable": True},
-            "message": {"type": "string", "nullable": True},
-            "thinking": {"type": "string", "nullable": True},
+            # ~80-token chat budget → ~480 chars; matches the OpenAI schema.
+            "message": {"type": "string", "nullable": True, "maxLength": 480},
         },
-        "required": ["kind", "action", "amount", "message", "thinking"],
+        "required": ["kind", "action", "amount", "message"],
     }
 
 
@@ -90,7 +90,9 @@ class GoogleAgent(BaseAdapter):
                 "response_schema": build_genai_action_schema(
                     ctx.legal, min_raise_to=ctx.min_raise_to
                 ),
-                "max_output_tokens": 1024,
+                # Gemini counts thinking tokens against max_output_tokens;
+                # 4096 leaves room for both reasoning and visible JSON.
+                "max_output_tokens": 4096,
             },
         )
         text = _first_text(resp)

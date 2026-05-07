@@ -146,7 +146,12 @@ async def test_openai_reasoning_effort_forwarded() -> None:
     agent.set_context(tournament=_tctx(), session=_sctx())
     await agent.decide(_ctx())
     assert spy.last_kwargs is not None
-    assert spy.last_kwargs.get("reasoning_effort") == "medium"
+    # We use the OpenRouter unified form (extra_body.reasoning.effort)
+    # rather than the top-level OpenAI flat form.  Sending both has been
+    # observed to 400 on some OR-routed reasoning models.
+    assert "reasoning_effort" not in spy.last_kwargs
+    extra = spy.last_kwargs.get("extra_body") or {}
+    assert extra.get("reasoning") == {"effort": "medium"}
 
 
 @pytest.mark.asyncio

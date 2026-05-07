@@ -59,8 +59,7 @@ Output protocol:
       "kind":     "action" | "probe" | "probe_reply",
       "action":   "fold" | "check" | "call" | "raise" | null,
       "amount":   integer chip amount for "raise", else null,
-      "message":  optional natural-language chat, <=80 tokens,
-      "thinking": optional private reasoning (not shown to opponents)
+      "message":  optional natural-language chat, <=80 tokens
     }}
 - For kind="action" you MUST fill in "action" (and "amount" when raising).
 - For kind="probe" or kind="probe_reply" you MUST fill in a non-empty "message".

@@ -63,10 +63,14 @@ def build_openai_action_schema(
                     ],
                 },
                 "amount": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "message": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "thinking": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                # ~80 tokens budget per chat message → ~480 chars in English.
+                # Hard schema cap stops verbose models from auto-folding on
+                # over-budget chat (which would measure verbosity, not poker).
+                "message": {
+                    "anyOf": [{"type": "string", "maxLength": 480}, {"type": "null"}],
+                },
             },
-            "required": ["kind", "action", "amount", "message", "thinking"],
+            "required": ["kind", "action", "amount", "message"],
         },
     }
 
@@ -92,36 +96,17 @@ class OpenAIAgent(BaseAdapter):
         user = bundle.user_session_log + "\n\n" + bundle.user_volatile
         if retry_reason:
             user += f"\n\nRETRY: previous output failed validation: {retry_reason}"
-        # System messages use the content-array form with `cache_control:
-        # ephemeral` on the largest stable block so Anthropic-via-OpenRouter
-        # caches the system_tournament + system_session prefix (saves ~90%
-        # on input cost for repeat hands).  OpenAI/Gemini/DeepSeek/xAI
-        # silently ignore cache_control via OR per OpenRouter's docs.
-        # Plain-string content for the user message — it changes per call
-        # so caching it would never hit.
+        # Plain-string content for all messages.  Anthropic-style
+        # cache_control is provider-specific and our short ~334-token
+        # system prompt is below Haiku 4.5's 4096-token cache minimum,
+        # so the hint never fires.  Sending content-arrays with
+        # cache_control to non-Anthropic OR routes is undocumented and
+        # has caused 400s on some providers — keep this clean.
         kwargs: dict[str, Any] = {
             "model": self._sdk_model_name(),
             "messages": [
-                {
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": bundle.system_tournament,
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                },
-                {
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": bundle.system_session,
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                },
+                {"role": "system", "content": bundle.system_tournament},
+                {"role": "system", "content": bundle.system_session},
                 {"role": "user", "content": user},
             ],
             "response_format": {
@@ -130,22 +115,39 @@ class OpenAIAgent(BaseAdapter):
                     ctx.legal, min_raise_to=ctx.min_raise_to
                 ),
             },
-            "max_tokens": 1024,
+            # max_tokens covers BOTH visible JSON output AND server-side
+            # reasoning (provider-specific).  At 1024 with reasoning on,
+            # thinking eats the whole budget and visible JSON is empty —
+            # auto-fold storm.  4096 leaves >=1k for visible output even
+            # under heavy reasoning.
+            "max_tokens": 4096,
         }
         if self._reasoning_effort:
-            # OpenRouter accepts a unified `reasoning` block in extra_body
-            # that propagates to the underlying provider (Anthropic extended
-            # thinking, Gemini thinking-mode, DeepSeek reasoner, Qwen3
-            # thinking).  Native OpenAI o-series accepts top-level
-            # `reasoning_effort`; we set both so the same adapter works
-            # whether the SDK is talking to OpenAI directly or to OR.
-            kwargs["reasoning_effort"] = self._reasoning_effort
+            # OpenRouter unified form.  Sending BOTH `reasoning_effort`
+            # (top-level) and `reasoning.effort` (extra_body) is rejected
+            # by some OR-routed reasoning models with a 400 ("only one
+            # of 'reasoning' and 'reasoning_effort' may be provided").
+            # Use only the OR canonical form here; native OpenAI o-series
+            # would need a separate code path if added later.
             kwargs["extra_body"] = {
                 "reasoning": {"effort": self._reasoning_effort},
             }
         client: OpenAIClientProtocol = self._client  # type: ignore[assignment]
         resp = await client.chat.completions.create(**kwargs)
-        text = resp.choices[0].message.content or ""
+        # Defensive: providers occasionally return choices=[] on certain
+        # content-filter / upstream-error paths.  Treat that as an empty
+        # response so the BaseAdapter retry loop sees AgentOutputParseError
+        # rather than an IndexError that would crash the run mid-hand.
+        if not resp.choices:
+            return ProviderCall(text="", usage=Usage(0, 0), latency_ms=0)
+        msg = resp.choices[0].message
+        text = msg.content or ""
+        # OpenRouter canonical reasoning text lives on `message.reasoning`
+        # (a string).  When present we capture it for telemetry only —
+        # never asked for in the schema and never echoed in next-turn
+        # prompts.  Native OpenAI o-series doesn't expose reasoning text
+        # at all, so this stays None there.
+        reasoning_text: str | None = getattr(msg, "reasoning", None) or None
         u = resp.usage
         details = getattr(u, "prompt_tokens_details", None)
         cache_read = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
@@ -165,7 +167,9 @@ class OpenAIAgent(BaseAdapter):
             cache_read_tokens=cache_read,
             thinking_tokens=reasoning_tokens,
         )
-        return ProviderCall(text=text, usage=usage, latency_ms=0)
+        return ProviderCall(
+            text=text, usage=usage, latency_ms=0, reasoning_text=reasoning_text
+        )
 
     def _sdk_model_name(self) -> str:
         return self.model_id.split(":", 1)[1]

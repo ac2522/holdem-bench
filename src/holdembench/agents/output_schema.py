@@ -20,13 +20,22 @@ class AgentOutputParseError(ValueError):
 
 
 class AgentOutput(BaseModel):
+    """Schema returned by every adapter.
+
+    NOTE: there is intentionally NO ``thinking`` field.  Asking the model
+    to emit reasoning in JSON is a second reasoning channel on top of the
+    provider's native thinking (when available), which biases the
+    benchmark toward models that reason in the JSON slot.  Provider-side
+    thinking still happens (and is billed); we just don't ask the model
+    to write its reasoning into the output we score.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: ActionKind
     action: ActionName | None = None
     amount: int | None = None
     message: str | None = None
-    thinking: str | None = None
 
     @model_validator(mode="after")
     def _check(self) -> AgentOutput:

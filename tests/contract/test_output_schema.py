@@ -57,13 +57,16 @@ def test_invalid_action_rejected() -> None:
         parse_agent_output('{"kind": "action", "action": "all_in"}')
 
 
-def test_thinking_stored_but_not_in_raw() -> None:
-    out = parse_agent_output(
-        '{"kind": "action", "action": "call", "thinking": "I have middle pair..."}'
-    )
-    assert out.thinking == "I have middle pair..."
-    raw = out.to_raw_decision()
-    assert raw.kind == "action"
+def test_thinking_field_rejected_to_prevent_in_band_cot_contamination() -> None:
+    """The schema deliberately omits a `thinking` field.  Asking the model to
+    emit reasoning in JSON would create a second reasoning channel that biases
+    the benchmark toward models that take the cue.  Provider-side reasoning
+    (when available) is captured separately for telemetry.
+    """
+    with pytest.raises(AgentOutputParseError):
+        parse_agent_output(
+            '{"kind": "action", "action": "call", "thinking": "I have middle pair..."}'
+        )
 
 
 def test_extra_unknown_field_rejected() -> None:

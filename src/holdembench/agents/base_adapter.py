@@ -50,11 +50,21 @@ class Usage:
 
 @dataclass(frozen=True)
 class ProviderCall:
-    """One round-trip to a provider SDK."""
+    """One round-trip to a provider SDK.
+
+    ``reasoning_text`` carries the provider-emitted reasoning content
+    (Anthropic ``thinking`` blocks, OR canonical ``message.reasoning``,
+    Gemini thoughts text, etc.) when available — captured for telemetry
+    only; never echoed back into a subsequent prompt.  We deliberately
+    do NOT ask the model to put reasoning in its JSON output (that would
+    contaminate the benchmark with a second reasoning channel that
+    advantages models that take the cue).
+    """
 
     text: str
     usage: Usage
     latency_ms: int
+    reasoning_text: str | None = None
 
 
 @runtime_checkable
@@ -126,7 +136,10 @@ class BaseAdapter(ABC, Agent):
             except AgentOutputParseError as e:
                 last_error = str(e)
                 continue
-            self._last_thinking = parsed.thinking
+            # Provider-side reasoning text (when available) is captured for
+            # telemetry only.  AgentOutput no longer carries a `thinking`
+            # field — see output_schema.AgentOutput docstring for why.
+            self._last_thinking = call.reasoning_text
             return parsed.to_raw_decision()
         # All attempts failed → synthetic auto-fold.  The runner still emits
         # its own ValidatorRejection / AutoFold events when relevant.

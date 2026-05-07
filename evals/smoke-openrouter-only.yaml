@@ -10,14 +10,14 @@
 # Run:
 #   uv run holdembench run --config evals/smoke-openrouter-only.yaml --seed 2026 --real-time
 
-tournament_id: smoke-3match-2026-05-04
+tournament_id: smoke-3match-2026-05-07
 seats:
   Seat1: openrouter:anthropic/claude-haiku-4.5     # Anthropic
-  Seat2: openrouter:google/gemini-2.5-flash         # Google
-  Seat3: openrouter:deepseek/deepseek-chat-v3.1     # DeepSeek
-  Seat4: openrouter:qwen/qwen3-32b                  # Qwen
-  Seat5: openrouter:x-ai/grok-3-mini                # xAI
-  Seat6: openrouter:meta-llama/llama-3.1-8b-instruct  # Meta (no thinking)
+  Seat2: openrouter:google/gemini-2.5-flash         # Google (thinking)
+  Seat3: openrouter:deepseek/deepseek-chat-v3.1     # DeepSeek (thinking)
+  Seat4: openrouter:qwen/qwen3-32b                  # Qwen (thinking)
+  Seat5: openrouter:x-ai/grok-3-mini                # xAI (thinking-by-default)
+  Seat6: openrouter:openai/gpt-4o-mini              # OpenAI (no thinking, 128K ctx)
   Seat7: stub:gto_approx                            # solver anchor
 
 # Defaults (used when blind_levels is empty); all matches start at level 1.
@@ -48,5 +48,5 @@ budget_ceilings_usd:
   openrouter:deepseek/deepseek-chat-v3.1: 4.00
   openrouter:qwen/qwen3-32b: 2.00
   openrouter:x-ai/grok-3-mini: 4.00
-  openrouter:meta-llama/llama-3.1-8b-instruct: 1.00
+  openrouter:openai/gpt-4o-mini: 1.50
   stub:gto_approx: 0.01

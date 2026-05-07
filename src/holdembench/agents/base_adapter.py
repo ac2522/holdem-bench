@@ -164,6 +164,7 @@ class BaseAdapter(ABC, Agent):
             output_tokens=usage.output_tokens,
             cache_read_tokens=usage.cache_read_tokens,
             cache_write_tokens=usage.cache_write_tokens,
+            thinking_tokens=usage.thinking_tokens,
         )
 
     @property

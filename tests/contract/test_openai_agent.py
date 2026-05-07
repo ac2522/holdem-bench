@@ -14,6 +14,7 @@ from holdembench.agents.prompt import SessionContext, TournamentContext
 _EXPECTED_PROMPT_TOKENS = 420
 _EXPECTED_COMPLETION_TOKENS = 15
 _EXPECTED_CACHED_TOKENS = 380
+_EXPECTED_REASONING_TOKENS = 200
 _TEST_MIN_RAISE_TO = 120
 
 
@@ -45,14 +46,24 @@ class _FakeOpenAI:
             return _openai_response(text)
 
 
-def _openai_response(text: str) -> object:
+def _openai_response(text: str, *, reasoning_tokens: int = 0) -> object:
     class Details:
         cached_tokens = _EXPECTED_CACHED_TOKENS
 
+    class CompDetails:
+        # OpenAI's `completion_tokens_details.reasoning_tokens` is a SUBSET
+        # of `completion_tokens`.  Reasoning is billed but reported here.
+        reasoning_tokens = 0
+
+    CompDetails.reasoning_tokens = reasoning_tokens
+
     class Usage:
         prompt_tokens = _EXPECTED_PROMPT_TOKENS
-        completion_tokens = _EXPECTED_COMPLETION_TOKENS
+        # When a model emits reasoning, completion_tokens INCLUDES the
+        # reasoning slice; visible output is the difference.
+        completion_tokens = _EXPECTED_COMPLETION_TOKENS + reasoning_tokens
         prompt_tokens_details = Details()
+        completion_tokens_details = CompDetails()
 
     class Msg:
         def __init__(self, content: str) -> None:
@@ -136,6 +147,73 @@ async def test_openai_reasoning_effort_forwarded() -> None:
     await agent.decide(_ctx())
     assert spy.last_kwargs is not None
     assert spy.last_kwargs.get("reasoning_effort") == "medium"
+
+
+@pytest.mark.asyncio
+async def test_openai_captures_reasoning_tokens_separately() -> None:
+    """When the response carries reasoning_tokens, Usage.thinking_tokens is set
+    and output_tokens is the visible-only slice (completion - reasoning).
+    """
+    spy = _Spy()
+
+    # Custom fake that injects reasoning_tokens into the response.
+    class _ReasoningFakeOpenAI(_FakeOpenAI):
+        class _Completions(_FakeOpenAI._Completions):  # type: ignore[misc]
+            async def create(self, **kwargs: Any) -> object:
+                self._spy.call_count += 1
+                self._spy.last_kwargs = kwargs
+                return _openai_response(
+                    self._responses[0], reasoning_tokens=_EXPECTED_REASONING_TOKENS
+                )
+
+        def __init__(self, responses: list[str], spy: _Spy) -> None:
+            self._responses = responses
+            self._spy = spy
+            chat_obj = self._Chat.__new__(self._Chat)
+            chat_obj.completions = _ReasoningFakeOpenAI._Completions(responses, spy)
+            self.chat = chat_obj
+
+    client = _ReasoningFakeOpenAI(['{"kind": "action", "action": "fold"}'], spy)
+    agent = OpenAIAgent(model_id="openai:gpt-5-mini", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    await agent.decide(_ctx())
+    u = agent.last_usage
+    assert u is not None
+    assert u.thinking_tokens == _EXPECTED_REASONING_TOKENS
+    # Visible output is completion_tokens minus the reasoning subset.
+    assert u.output_tokens == _EXPECTED_COMPLETION_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_openai_cost_includes_thinking_tokens() -> None:
+    """Cost should reflect reasoning tokens billed at output rate by default."""
+    spy = _Spy()
+
+    class _ReasoningFakeOpenAI(_FakeOpenAI):
+        class _Completions(_FakeOpenAI._Completions):  # type: ignore[misc]
+            async def create(self, **kwargs: Any) -> object:
+                self._spy.call_count += 1
+                self._spy.last_kwargs = kwargs
+                return _openai_response(
+                    self._responses[0], reasoning_tokens=_EXPECTED_REASONING_TOKENS
+                )
+
+        def __init__(self, responses: list[str], spy: _Spy) -> None:
+            self._responses = responses
+            self._spy = spy
+            chat_obj = self._Chat.__new__(self._Chat)
+            chat_obj.completions = _ReasoningFakeOpenAI._Completions(responses, spy)
+            self.chat = chat_obj
+
+    client = _ReasoningFakeOpenAI(['{"kind": "action", "action": "call"}'], spy)
+    agent = OpenAIAgent(model_id="openai:gpt-5-mini", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    await agent.decide(_ctx())
+    # gpt-5-mini pricing: input 0.40/MTok, output 1.60/MTok, cache 0.10/MTok
+    # Cost should include 200 reasoning tokens billed at 1.60/MTok.
+    expected_thinking_cost = _EXPECTED_REASONING_TOKENS * 1.60 / 1_000_000
+    # Bring some slack: just assert thinking contributes positively.
+    assert agent.last_cost_usd > expected_thinking_cost * 0.9
 
 
 @pytest.mark.asyncio

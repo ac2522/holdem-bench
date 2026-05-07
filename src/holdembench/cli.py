@@ -119,6 +119,7 @@ def run(
         click.echo(
             f"  {mid}: ${stats['usd_total']:.4f} "
             f"(in {int(stats['input_tokens'])}tok, out {int(stats['output_tokens'])}tok, "
+            f"think {int(stats['thinking_tokens'])}tok, "
             f"cache_read {int(stats['cache_read_tokens'])}tok)"
         )
 

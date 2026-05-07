@@ -14,6 +14,7 @@ from holdembench.agents.prompt import SessionContext, TournamentContext
 _EXPECTED_PROMPT_TOKENS = 420
 _EXPECTED_OUTPUT_TOKENS = 12
 _EXPECTED_CACHED_TOKENS = 380
+_EXPECTED_THOUGHTS_TOKENS = 150
 _TEST_MIN_RAISE_TO = 200
 
 
@@ -35,11 +36,12 @@ class _FakeGoogle:
         return _google_response(text)
 
 
-def _google_response(text: str) -> object:
+def _google_response(text: str, *, thoughts_tokens: int = 0) -> object:
     class Usage:
         prompt_token_count = _EXPECTED_PROMPT_TOKENS
         candidates_token_count = _EXPECTED_OUTPUT_TOKENS
         cached_content_token_count = _EXPECTED_CACHED_TOKENS
+        thoughts_token_count = thoughts_tokens
 
     class Part:
         def __init__(self, text: str) -> None:
@@ -112,6 +114,33 @@ async def test_google_response_schema_requested() -> None:
     cfg = spy.last_kwargs.get("config") or {}
     assert cfg.get("response_mime_type") == "application/json"
     assert "response_schema" in cfg
+
+
+@pytest.mark.asyncio
+async def test_google_captures_thoughts_token_count() -> None:
+    """Gemini's `usage_metadata.thoughts_token_count` lands in Usage.thinking_tokens.
+    candidates_token_count remains the visible output count (Gemini reports
+    thoughts and visible output as disjoint counts).
+    """
+    spy = _Spy()
+
+    class _ThinkingFakeGoogle(_FakeGoogle):
+        async def generate_content(self, **kwargs: Any) -> object:
+            self._spy.call_count += 1
+            self._spy.last_kwargs = kwargs
+            return _google_response(
+                self._responses[0], thoughts_tokens=_EXPECTED_THOUGHTS_TOKENS
+            )
+
+    client = _ThinkingFakeGoogle(['{"kind": "action", "action": "call"}'], spy)
+    agent = GoogleAgent(model_id="google:gemini-3-flash-preview", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    await agent.decide(_ctx())
+    u = agent.last_usage
+    assert u is not None
+    assert u.thinking_tokens == _EXPECTED_THOUGHTS_TOKENS
+    # Visible output unchanged — Gemini reports thoughts disjointly.
+    assert u.output_tokens == _EXPECTED_OUTPUT_TOKENS
 
 
 @pytest.mark.asyncio

@@ -123,12 +123,22 @@ class OpenAIAgent(BaseAdapter):
         text = resp.choices[0].message.content or ""
         u = resp.usage
         details = getattr(u, "prompt_tokens_details", None)
-        cache_read = int(getattr(details, "cached_tokens", 0)) if details else 0
+        cache_read = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
         prompt_tokens = int(getattr(u, "prompt_tokens", 0))
+        completion_tokens = int(getattr(u, "completion_tokens", 0))
+        # reasoning_tokens is a SUBSET of completion_tokens for OpenAI o-series
+        # and (via OpenRouter normalisation) for any model that supports
+        # thinking.  We split them so visible output and reasoning tokens
+        # are billed at the right rate even when those rates differ.
+        comp_details = getattr(u, "completion_tokens_details", None)
+        reasoning_tokens = (
+            int(getattr(comp_details, "reasoning_tokens", 0) or 0) if comp_details else 0
+        )
         usage = Usage(
             input_tokens=max(0, prompt_tokens - cache_read),
-            output_tokens=int(getattr(u, "completion_tokens", 0)),
+            output_tokens=max(0, completion_tokens - reasoning_tokens),
             cache_read_tokens=cache_read,
+            thinking_tokens=reasoning_tokens,
         )
         return ProviderCall(text=text, usage=usage, latency_ms=0)
 

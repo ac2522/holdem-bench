@@ -97,10 +97,15 @@ class GoogleAgent(BaseAdapter):
         u = resp.usage_metadata
         cache_read = int(getattr(u, "cached_content_token_count", 0) or 0)
         prompt_tokens = int(getattr(u, "prompt_token_count", 0))
+        # Gemini reports thoughts_token_count separately from
+        # candidates_token_count; both are billed but at potentially
+        # different rates.  Capture them as distinct fields.
+        thinking_tokens = int(getattr(u, "thoughts_token_count", 0) or 0)
         usage = Usage(
             input_tokens=max(0, prompt_tokens - cache_read),
             output_tokens=int(getattr(u, "candidates_token_count", 0)),
             cache_read_tokens=cache_read,
+            thinking_tokens=thinking_tokens,
         )
         return ProviderCall(text=text, usage=usage, latency_ms=0)
 

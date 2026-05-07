@@ -11,12 +11,20 @@ from holdembench.types import ActionName, Street
 
 @dataclass(frozen=True)
 class Pricing:
-    """Per-million-token USD prices for a given model."""
+    """Per-million-token USD prices for a given model.
+
+    ``thinking_per_mtok`` defaults to ``output_per_mtok`` because most
+    providers bill reasoning/thinking tokens at the same rate as output
+    completion tokens.  Override only when a provider charges a different
+    rate (none currently do, but the field exists so we don't have to
+    revisit pricing if one starts to).
+    """
 
     input_per_mtok: float
     output_per_mtok: float
     cache_read_per_mtok: float = 0.0
     cache_write_per_mtok: float = 0.0
+    thinking_per_mtok: float | None = None  # None = bill at output rate
 
     def cost_usd(
         self,
@@ -25,12 +33,17 @@ class Pricing:
         output_tokens: int,
         cache_read_tokens: int = 0,
         cache_write_tokens: int = 0,
+        thinking_tokens: int = 0,
     ) -> float:
+        thinking_rate = (
+            self.thinking_per_mtok if self.thinking_per_mtok is not None else self.output_per_mtok
+        )
         return (
             input_tokens * self.input_per_mtok / 1_000_000
             + output_tokens * self.output_per_mtok / 1_000_000
             + cache_read_tokens * self.cache_read_per_mtok / 1_000_000
             + cache_write_tokens * self.cache_write_per_mtok / 1_000_000
+            + thinking_tokens * thinking_rate / 1_000_000
         )
 
 

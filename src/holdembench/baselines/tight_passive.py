@@ -66,5 +66,14 @@ class TightPassiveAgent:
 
 
 def _compute_raise(ctx: DecisionContext) -> int:
-    """Compute raise amount. Default: 3× BB."""
-    return 60  # 3× BB default — refined once we wire real blind data in harness
+    """Compute a legal raise-to amount.
+
+    Uses ``ctx.min_raise_to`` directly when available (always set by the
+    runner when raise is in legal), capped at the seat's stack so we
+    never try to raise more than we have.  Without this the stub baseline
+    would raise to a hardcoded 60 even when blinds rose to 160/320,
+    triggering ValidatorRejection -> AutoFold every premium hand.
+    """
+    seat_stack = ctx.stacks.get(ctx.seat, 0)
+    target = ctx.min_raise_to or 0
+    return min(max(target, 1), seat_stack) if seat_stack > 0 else target

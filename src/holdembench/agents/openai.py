@@ -9,11 +9,14 @@ retry rate.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Protocol
 
 from holdembench.agents.base import DecisionContext
 from holdembench.agents.base_adapter import BaseAdapter, ProviderCall, Usage
 from holdembench.types import ActionName
+
+_SEED_MODULUS = 2**31
 
 
 class _CompletionsProto(Protocol):
@@ -34,6 +37,7 @@ def build_openai_action_schema(
     legal: tuple[ActionName, ...],
     *,
     min_raise_to: int | None = None,  # noqa: ARG001 — kept for API symmetry; see note
+    is_probe_reply: bool = False,
 ) -> dict[str, Any]:
     """JSON Schema for one decision, narrowing ``action`` enum to ``legal``.
 
@@ -47,7 +51,14 @@ def build_openai_action_schema(
     supported"), and we can't tell at request time whether OpenRouter
     will route to Anthropic.  Sub-min raises are caught post-hoc by
     ``TDAValidator`` instead.
+
+    ``kind`` is narrowed by context: when ``is_probe_reply`` is False
+    the model may emit ``action`` or ``probe`` only; when True the
+    model is replying to another seat's probe and may emit only
+    ``probe_reply``.  Without this narrowing models have been observed
+    to spontaneously emit ``probe_reply`` at themselves.
     """
+    kind_enum = ["probe_reply"] if is_probe_reply else ["action", "probe"]
     return {
         "name": "agent_output",
         "strict": True,
@@ -55,7 +66,7 @@ def build_openai_action_schema(
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
+                "kind": {"type": "string", "enum": kind_enum},
                 "action": {
                     "anyOf": [
                         {"type": "string", "enum": list(legal)},
@@ -112,7 +123,9 @@ class OpenAIAgent(BaseAdapter):
             "response_format": {
                 "type": "json_schema",
                 "json_schema": build_openai_action_schema(
-                    ctx.legal, min_raise_to=ctx.min_raise_to
+                    ctx.legal,
+                    min_raise_to=ctx.min_raise_to,
+                    is_probe_reply=ctx.is_probe_reply,
                 ),
             },
             # max_tokens covers BOTH visible JSON output AND server-side
@@ -121,6 +134,13 @@ class OpenAIAgent(BaseAdapter):
             # auto-fold storm.  4096 leaves >=1k for visible output even
             # under heavy reasoning.
             "max_tokens": 4096,
+            # Reproducibility.  All OR routes default temperature=1.0 if
+            # absent; pinning explicitly so a future provider change
+            # doesn't silently shift sampling.  `seed` is best-effort
+            # honoured by most providers and lets us replay a single
+            # decision deterministically given the same prompt.
+            "temperature": 1.0,
+            "seed": _seed_from_ctx(self.model_id, ctx),
         }
         if self._reasoning_effort:
             # OpenRouter unified form.  Sending BOTH `reasoning_effort`
@@ -173,3 +193,15 @@ class OpenAIAgent(BaseAdapter):
 
     def _sdk_model_name(self) -> str:
         return self.model_id.split(":", 1)[1]
+
+
+def _seed_from_ctx(model_id: str, ctx: DecisionContext) -> int:
+    """Stable per-decision seed derived from model_id + hand_id + seat.
+
+    Using the same seed across re-runs of the same hand lets us reproduce
+    a model's decision when investigating a log; using different seeds
+    across hands prevents the model from accidentally giving the same
+    response to every decision.
+    """
+    h = hashlib.sha256(f"{model_id}|{ctx.hand_id}|{ctx.seat}".encode())
+    return int.from_bytes(h.digest()[:4], "big") % _SEED_MODULUS

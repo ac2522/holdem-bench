@@ -10,7 +10,7 @@
 # Run:
 #   uv run holdembench run --config evals/smoke-openrouter-only.yaml --seed 2026 --real-time
 
-tournament_id: smoke-3match-2026-05-07
+tournament_id: smoke-1match-2026-05-07
 # Anthropic Haiku 4.5 sat out: needs 4096-token minimum for prompt caching;
 # our prompt is ~334 tokens and we are not padding it (would contaminate
 # the benchmark with strategy hints).  Uncached Haiku would dominate cost.
@@ -28,9 +28,9 @@ big_blind: 20
 ante: 0
 starting_stack: 1000
 
-# 200 hands per match × 3 matches.
+# Single-match audit run (will resume to 3-match config after log audit).
 hand_cap: 200
-session_count: 3
+session_count: 1
 
 master_seed: 2026
 reasoning_effort: medium

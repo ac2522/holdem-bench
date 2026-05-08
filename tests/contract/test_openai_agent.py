@@ -222,6 +222,58 @@ async def test_openai_cost_includes_thinking_tokens() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_kind_enum_excludes_probe_reply_when_not_replying() -> None:
+    """When ctx.is_probe_reply is False, the schema's `kind` enum must not
+    include 'probe_reply' — otherwise the model can spontaneously emit a
+    probe_reply at itself (observed live with Qwen3-32B)."""
+    spy = _Spy()
+    client = _FakeOpenAI(['{"kind": "action", "action": "fold"}'], spy)
+    agent = OpenAIAgent(model_id="openai:gpt-5-mini", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    ctx = DecisionContext(
+        seat="Seat1",
+        hand_id="s1h001",
+        street="preflop",
+        legal=("fold", "call", "raise"),
+        stacks={"Seat1": 1000},
+        board=(),
+        hole=("As", "Kd"),
+        budget_remaining=400,
+        is_probe_reply=False,
+        deadline_s=60.0,
+    )
+    await agent.decide(ctx)
+    assert spy.last_kwargs is not None
+    schema = spy.last_kwargs["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["kind"]["enum"] == ["action", "probe"]
+
+
+@pytest.mark.asyncio
+async def test_openai_kind_enum_only_probe_reply_when_replying() -> None:
+    """When ctx.is_probe_reply is True, the schema must force kind='probe_reply'."""
+    spy = _Spy()
+    client = _FakeOpenAI(['{"kind": "probe_reply", "message": "Sure thing fellow."}'], spy)
+    agent = OpenAIAgent(model_id="openai:gpt-5-mini", client=client)
+    agent.set_context(tournament=_tctx(), session=_sctx())
+    ctx = DecisionContext(
+        seat="Seat1",
+        hand_id="s1h001",
+        street="preflop",
+        legal=("fold", "call", "raise"),
+        stacks={"Seat1": 1000},
+        board=(),
+        hole=("As", "Kd"),
+        budget_remaining=400,
+        is_probe_reply=True,
+        deadline_s=60.0,
+    )
+    await agent.decide(ctx)
+    assert spy.last_kwargs is not None
+    schema = spy.last_kwargs["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["kind"]["enum"] == ["probe_reply"]
+
+
+@pytest.mark.asyncio
 async def test_openai_amount_has_no_minimum_constraint() -> None:
     """Schema must NOT carry `minimum` on amount — Anthropic-via-OpenRouter
     rejects `minimum` on integer types.  Sub-min raises are caught post-hoc

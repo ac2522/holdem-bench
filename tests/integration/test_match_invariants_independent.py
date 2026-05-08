@@ -490,7 +490,7 @@ async def test_chips_conserved_per_session_with_random_aggressive(
         tournament_id="bust-conservation",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=7, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=7)}
     )
     events = _replay(result.log_path)
     bank = _bank(4, 1000)
@@ -513,7 +513,7 @@ async def test_hand_end_stack_deltas_always_zero_sum(tmp_path: Path) -> None:
         tournament_id="per-hand-conservation",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=2026, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=2026)}
     )
     events = _replay(result.log_path)
     hand_ends = [e for e in events if e.type == "hand_end"]
@@ -536,7 +536,7 @@ async def test_busted_seat_remains_zero_for_remainder_of_match(tmp_path: Path) -
         tournament_id="bust-no-rebuy",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=3, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=3)}
     )
     events = _replay(result.log_path)
     busted_at: dict[str, int] = {}  # seat -> first hand index busted
@@ -570,7 +570,7 @@ async def test_final_score_equals_sum_of_session_finals(tmp_path: Path) -> None:
         tournament_id="final-score-sum",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=5, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=5)}
     )
     events = _replay(result.log_path)
     per_seat_total: dict[str, int] = defaultdict(int)
@@ -598,7 +598,7 @@ async def test_winner_seat_has_max_final_score(tmp_path: Path) -> None:
         tournament_id="winner-argmax",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=13, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=13)}
     )
     events = _replay(result.log_path)
     end = next((e for e in events if e.type == "tournament_end"), None)
@@ -627,7 +627,7 @@ async def test_total_bank_across_matches_matches_starting_total(tmp_path: Path) 
         tournament_id="bank-across",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=21, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=21)}
     )
     events = _replay(result.log_path)
     end = next((e for e in events if e.type == "tournament_end"), None)
@@ -659,7 +659,7 @@ async def test_first_hand_of_every_match_resets_to_starting_stack(
         tournament_id="reset-stacks",
     )
     result = await run_tournament(
-        cfg, {"stub:random": RandomAgent(seed=4, big_blind=20)}
+        cfg, {"stub:random": RandomAgent(seed=4)}
     )
     events = _replay(result.log_path)
     current_session = 0

@@ -90,6 +90,8 @@ class BaseAdapter(ABC, Agent):
         self._last_prompt_hash: str = ""
         self._last_latency_ms: int = 0
         self._last_parse_retries: int = 0
+        self._last_auto_generated: bool = False
+        self._last_parse_failure_reason: str | None = None
 
     # ----- Context management -----
 
@@ -141,9 +143,13 @@ class BaseAdapter(ABC, Agent):
             # field — see output_schema.AgentOutput docstring for why.
             self._last_thinking = call.reasoning_text
             return parsed.to_raw_decision()
-        # All attempts failed → synthetic auto-fold.  The runner still emits
-        # its own ValidatorRejection / AutoFold events when relevant.
+        # All attempts failed → synthetic auto-fold.  Mark it so the runner
+        # can emit AutoFold + flag ActionResponse.auto_generated=True.
+        # Without this, every parse failure looks like a deliberate fold
+        # in the event log and the chip-EV scorer treats it as strategic.
         self._last_thinking = None
+        self._last_auto_generated = True
+        self._last_parse_failure_reason = last_error
         return RawDecision(kind="action", action="fold")
 
     def _reset_per_decision(self) -> None:
@@ -152,6 +158,8 @@ class BaseAdapter(ABC, Agent):
         self._last_thinking = None
         self._last_latency_ms = 0
         self._last_parse_retries = 0
+        self._last_auto_generated = False
+        self._last_parse_failure_reason = None
 
     # ----- Accounting helpers -----
 
@@ -204,6 +212,19 @@ class BaseAdapter(ABC, Agent):
     def last_parse_retries(self) -> int:
         """Count of JSON/schema-parse retries for the most recent decide() call."""
         return self._last_parse_retries
+
+    @property
+    def last_auto_generated(self) -> bool:
+        """True iff the last decide() returned a synthetic auto-fold (both
+        parse attempts failed).  Runner uses this to flag ActionResponse
+        and emit AutoFold(reason='parse_failure')."""
+        return self._last_auto_generated
+
+    @property
+    def last_parse_failure_reason(self) -> str | None:
+        """The error from the second parse attempt when an auto-fold was
+        synthesised; None on successful parse."""
+        return self._last_parse_failure_reason
 
     @abstractmethod
     async def _call_provider(

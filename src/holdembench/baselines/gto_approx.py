@@ -39,12 +39,13 @@ class GTOApproxAgent:
     model_id = "stub:gto_approx"
     pricing = Pricing(input_per_mtok=0.0, output_per_mtok=0.0)
 
-    def __init__(self, big_blind: int = 20) -> None:
-        self._big_blind = big_blind
-
     async def decide(self, ctx: DecisionContext) -> RawDecision:
         if ctx.street == "preflop":
-            stack_bb = max(1, ctx.stacks[ctx.seat] // self._big_blind)
+            # Use the per-hand BB from context — varies under rising
+            # blinds.  Falls back to 20 only for back-compat with very
+            # old test harnesses that didn't populate big_blind.
+            bb = ctx.big_blind or 20
+            stack_bb = max(1, ctx.stacks[ctx.seat] // bb)
             in_range = _hand_key(ctx.hole) in _shove_range_for(stack_bb)
             if in_range and "raise" in ctx.legal:
                 return RawDecision(kind="action", action="raise", amount=ctx.stacks[ctx.seat])

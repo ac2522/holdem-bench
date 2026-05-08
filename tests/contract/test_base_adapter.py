@@ -202,6 +202,32 @@ async def test_decide_resets_counters_between_calls() -> None:
 
 
 @pytest.mark.asyncio
+async def test_two_failures_marks_auto_generated_true() -> None:
+    """Synthetic auto-fold from two failed parses should flip last_auto_generated."""
+    adapter = _FakeAdapter(
+        model_id="test:model",
+        responses=["bad", "still bad"],
+    )
+    adapter.set_context(tournament=_tournament(), session=_session())
+    raw = await adapter.decide(_ctx())
+    assert raw.action == "fold"
+    assert adapter.last_auto_generated is True
+    assert adapter.last_parse_failure_reason is not None
+
+
+@pytest.mark.asyncio
+async def test_successful_parse_leaves_auto_generated_false() -> None:
+    adapter = _FakeAdapter(
+        model_id="test:model",
+        responses=['{"kind": "action", "action": "call"}'],
+    )
+    adapter.set_context(tournament=_tournament(), session=_session())
+    await adapter.decide(_ctx())
+    assert adapter.last_auto_generated is False
+    assert adapter.last_parse_failure_reason is None
+
+
+@pytest.mark.asyncio
 async def test_last_thinking_comes_from_provider_reasoning_text_not_json() -> None:
     """`thinking` is no longer part of the JSON schema (it would bias the
     benchmark).  Adapters now populate ``last_thinking`` from the

@@ -114,6 +114,16 @@ class TournamentConfig:
     blind_levels: tuple[BlindLevel, ...] | None = None
 
     def __post_init__(self) -> None:
+        self._validate_seats()
+        self._validate_scalars()
+        if self.budget_ceilings_usd is not None:
+            for mid, v in self.budget_ceilings_usd.items():
+                if v <= 0:
+                    raise ValueError(f"budget_ceilings_usd[{mid}] must be > 0, got {v}")
+        if self.blind_levels:
+            self._validate_blind_levels()
+
+    def _validate_seats(self) -> None:
         if not self.seats:
             raise ValueError("TournamentConfig.seats must be non-empty")
         for key in self.seats:
@@ -121,6 +131,8 @@ class TournamentConfig:
                 raise ValueError(
                     f"TournamentConfig.seats key {key!r} does not match 'SeatN' pattern"
                 )
+
+    def _validate_scalars(self) -> None:
         if self.small_blind <= 0:
             raise ValueError(f"small_blind must be > 0, got {self.small_blind}")
         if self.big_blind < self.small_blind:
@@ -133,12 +145,38 @@ class TournamentConfig:
             raise ValueError(f"starting_stack must be > 0, got {self.starting_stack}")
         if self.hand_cap <= 0:
             raise ValueError(f"hand_cap must be > 0, got {self.hand_cap}")
-        if self.budget_ceilings_usd is not None:
-            for mid, v in self.budget_ceilings_usd.items():
-                if v <= 0:
-                    raise ValueError(f"budget_ceilings_usd[{mid}] must be > 0, got {v}")
         if self.session_count <= 0:
             raise ValueError(f"session_count must be > 0, got {self.session_count}")
+
+    def _validate_blind_levels(self) -> None:
+        """Reject malformed or out-of-order blind ladders.
+
+        Without this guard, ``_blinds_for_hand`` would silently pick the
+        last qualifying level in tuple-iteration order rather than the
+        highest ``start_hand`` — see audit finding "blind levels last-wins".
+        """
+        levels = self.blind_levels or ()
+        prev_start = 0
+        for lvl in levels:
+            if lvl.start_hand < 1:
+                raise ValueError(
+                    f"BlindLevel.start_hand must be >= 1, got {lvl.start_hand}"
+                )
+            if lvl.start_hand <= prev_start:
+                raise ValueError(
+                    f"blind_levels must be strictly ascending by start_hand; "
+                    f"saw {lvl.start_hand} after {prev_start}"
+                )
+            prev_start = lvl.start_hand
+            if lvl.small_blind <= 0:
+                raise ValueError(
+                    f"BlindLevel.small_blind must be > 0, got {lvl.small_blind}"
+                )
+            if lvl.big_blind < lvl.small_blind:
+                raise ValueError(
+                    f"BlindLevel.big_blind ({lvl.big_blind}) must be >= "
+                    f"small_blind ({lvl.small_blind})"
+                )
 
 
 @dataclass(frozen=True)
@@ -215,7 +253,15 @@ def _legal_actions(table: Table) -> list[ActionName]:
 
 
 _POKERKIT_NO_REASON_TO_FOLD = "no reason for this player to fold"
-_POKERKIT_ALREADY_COVERED = "already covered by a previous bet/raise"
+# Pokerkit raises four distinct ValueErrors when a raise can't proceed.
+# We treat all four as "downgrade to call/check" since they all mean
+# raising is structurally impossible at this point.
+_POKERKIT_RAISE_BLOCKED_FRAGMENTS: tuple[str, ...] = (
+    "already covered by a previous bet/raise",  # opponents all-in
+    "no more completion, betting, or raising",  # street raise cap hit
+    "already acted and hence cannot raise",  # already-acted + non-full all-in
+    "no reason to complete, bet, or raise",  # everyone else folded/all-in
+)
 
 # A poker hand requires at least two players willing to put chips at risk.
 _MIN_ACTIVE_SEATS = 2
@@ -283,11 +329,13 @@ def _apply_raw_to_table(table: Table, idx: int, raw: RawDecision) -> None:
         try:
             table.apply_raise(idx, to=raw.amount)
         except ValueError as exc:
-            # If the LLM picked "raise" while every opponent is already
-            # all-in-covered (a corner case _legal_actions now blocks but
-            # could still surface via stale prompt context after a re-deal),
-            # downgrade to check_or_call rather than crashing the run.
-            if _POKERKIT_ALREADY_COVERED not in str(exc).lower():
+            # Pokerkit raises one of four distinct ValueErrors when a raise
+            # is structurally impossible (opponents covered, street raise
+            # cap, already-acted + non-full all-in, no reason to bet).
+            # All four mean the same thing for us: the raise can't go in,
+            # downgrade to check_or_call.  Any other ValueError propagates.
+            msg = str(exc).lower()
+            if not any(frag in msg for frag in _POKERKIT_RAISE_BLOCKED_FRAGMENTS):
                 raise
             table.apply_check_or_call(idx)
 
@@ -489,6 +537,15 @@ def _emit_action_response_and_update_stats(
     thinking = getattr(agent_obj, "last_thinking", None)
     prompt_hash = str(getattr(agent_obj, "last_prompt_hash", "") or "")
     latency_ms = int(getattr(agent_obj, "last_latency_ms", 0) or 0)
+    auto_generated = bool(getattr(agent_obj, "last_auto_generated", False))
+    if auto_generated:
+        # The adapter's parse-retry loop fell through; what we're emitting
+        # is a SYNTHETIC fold, not a strategic one.  Tag it on the
+        # ActionResponse and emit a separate AutoFold so downstream
+        # analysis (chip-EV scorer, leaderboard) can exclude these from
+        # "decisions the model made".
+        reason = getattr(agent_obj, "last_parse_failure_reason", None) or "parse_failure"
+        log.emit(AutoFold(seat=seat_name, reason=f"parse_failure: {reason}"[:200]))
     log.emit(
         ActionResponse(
             hand_id=hand_id,
@@ -503,6 +560,7 @@ def _emit_action_response_and_update_stats(
             model_id=agent_obj.model_id,
             prompt_hash=prompt_hash,
             thinking=thinking,
+            auto_generated=auto_generated,
         )
     )
     running_cost_by_seat[seat_name] = running_cost_by_seat.get(seat_name, 0.0) + cost
@@ -642,6 +700,7 @@ async def _run_hand(
                 budget_remaining=chat.budget_remaining(seat_name),
             )
         )
+        _, hand_bb = _blinds_for_hand(cfg, hand_num)
         ctx = DecisionContext(
             seat=seat_name,
             hand_id=hand_id,
@@ -656,6 +715,7 @@ async def _run_hand(
             min_raise_to=table.min_raise_to() if "raise" in legal else None,
             chat_log=chat.messages_this_hand(),
             canonical_action_log="\n".join(action_log),
+            big_blind=hand_bb,
         )
         raw = await agents_by_seat[seat_name].decide(ctx)
         validated = await _validate_with_retry(
@@ -673,6 +733,15 @@ async def _run_hand(
             continue
         raw = validated
         final_message = _filter_chat_message(log=log, seat_name=seat_name, raw=raw, chat=chat)
+        # If a probe / probe_reply's message was rejected (over-budget,
+        # content filter), final_message is None.  Emitting that as a
+        # probe-kind ActionResponse would crash the pydantic validator
+        # (probe requires non-empty message).  Demote to an auto-fold
+        # so the hand keeps moving and the rejection is visible in the
+        # event log via the already-emitted ValidatorRejection.
+        if raw.kind in {"probe", "probe_reply"} and final_message is None:
+            log.emit(AutoFold(seat=seat_name, reason=f"chat_filtered:{raw.kind}"))
+            raw = RawDecision(kind="action", action="fold")
         cost = _emit_action_response_and_update_stats(
             log=log,
             agent_obj=agents_by_seat[seat_name],
@@ -714,6 +783,11 @@ def _refresh_adapter_contexts(
     Adapters keyed by the same ``model_id`` share a single agent instance; the
     first seat encountered wins the seat-identity slot (tracked as P1.1-B).
     """
+    # Use level-1 blinds for SessionContext so the LLM's per-session
+    # prompt matches what hand 1 actually plays.  The cfg defaults can
+    # diverge from the ladder's level 1 (e.g. cfg.bb=20 but ladder
+    # starts at 50/100) and previously the prompt would silently lie.
+    sb_l1, bb_l1 = _blinds_for_hand(cfg, 1)
     seen_models: set[str] = set()
     for seat in seat_list:
         agent = agents_by_seat[seat]
@@ -729,10 +803,10 @@ def _refresh_adapter_contexts(
         )
         session = SessionContext(
             session_id=session_id,
-            small_blind=cfg.small_blind,
-            big_blind=cfg.big_blind,
+            small_blind=sb_l1,
+            big_blind=bb_l1,
             ante=cfg.ante,
-            starting_stack_bb=max(1, cfg.starting_stack // cfg.big_blind),
+            starting_stack_bb=max(1, cfg.starting_stack // bb_l1),
             orbit_budget_tokens=400,
         )
         agent.set_context(tournament=tournament, session=session)  # type: ignore[attr-defined]
@@ -760,11 +834,16 @@ async def _run_session(
 
     Mutates ``running_stacks`` in-place.
     """
-    # Match reset: stacks back to starting_stack.  This is what makes
-    # session_count behave as match_count — each session is an
-    # independent game.
+    # Match reset: stacks back to starting_stack, per-match cost
+    # accounting and circuit-breaker state cleared.  This is what
+    # makes session_count behave as match_count — each session is an
+    # independent game.  Without resetting `breached`, a model that
+    # tripped 2x its ceiling in match 1 would auto-fold every hand of
+    # matches 2 and 3 silently.
     for seat in seat_list:
         running_stacks[seat] = cfg.starting_stack
+        running_cost_by_seat[seat] = 0.0
+    breached.clear()
     _refresh_adapter_contexts(
         cfg=cfg,
         seat_list=seat_list,

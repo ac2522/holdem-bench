@@ -29,8 +29,8 @@ class CannedTalkAgent:
     model_id = "stub:canned_talk"
     pricing = Pricing(input_per_mtok=0.0, output_per_mtok=0.0)
 
-    def __init__(self, seed: int = 0, big_blind: int = 20) -> None:
-        self._gto = GTOApproxAgent(big_blind=big_blind)
+    def __init__(self, seed: int = 0) -> None:
+        self._gto = GTOApproxAgent()
         self._rng = np.random.default_rng(seed)
 
     async def decide(self, ctx: DecisionContext) -> RawDecision:

@@ -23,6 +23,7 @@ def build_genai_action_schema(
     legal: tuple[ActionName, ...],
     *,
     min_raise_to: int | None = None,  # noqa: ARG001 — kept for API symmetry; see note
+    is_probe_reply: bool = False,
 ) -> dict[str, Any]:
     """Gemini schema for one decision, ``action`` enum narrowed to ``legal``.
 
@@ -37,10 +38,11 @@ def build_genai_action_schema(
     rejects ``minimum`` on integers and we want one schema shape across
     providers; sub-min raises are still caught post-hoc by TDAValidator.
     """
+    kind_enum = ["probe_reply"] if is_probe_reply else ["action", "probe"]
     return {
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "enum": ["action", "probe", "probe_reply"]},
+            "kind": {"type": "string", "enum": kind_enum},
             "action": {
                 "type": "string",
                 "enum": list(legal),
@@ -88,7 +90,9 @@ class GoogleAgent(BaseAdapter):
             config={
                 "response_mime_type": "application/json",
                 "response_schema": build_genai_action_schema(
-                    ctx.legal, min_raise_to=ctx.min_raise_to
+                    ctx.legal,
+                    min_raise_to=ctx.min_raise_to,
+                    is_probe_reply=ctx.is_probe_reply,
                 ),
                 # Gemini counts thinking tokens against max_output_tokens;
                 # 4096 leaves room for both reasoning and visible JSON.

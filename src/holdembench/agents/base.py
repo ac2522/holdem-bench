@@ -72,6 +72,9 @@ class DecisionContext:
     # so far (one short line per action).  Rendered into the per-decision
     # prompt so the LLM can plan around opponents' history.
     canonical_action_log: str = ""
+    # Big blind in effect for this hand.  Stubs and downstream analysis
+    # tools use it to compute stack-in-BB (varies under rising blinds).
+    big_blind: int = 0
 
 
 class Agent(Protocol):
